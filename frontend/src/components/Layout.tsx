@@ -1,13 +1,21 @@
 import { useEffect } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
-import { BookOpen, Carrot, LogOut, Moon, Settings, Sun } from "lucide-react";
+import { useQuery } from "@tanstack/react-query";
+import { BookOpen, Carrot, LogOut, Moon, Settings, ShoppingBasket, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/Avatar";
 import { Brand } from "@/components/Logo";
+import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { useSettings } from "@/lib/useSettings";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
+
+const tabClass = ({ isActive }: { isActive: boolean }) =>
+  cn(
+    "relative flex flex-1 flex-col items-center gap-0.5 rounded-xl py-1.5 text-[11px] font-medium transition-colors",
+    isActive ? "text-primary" : "text-muted-foreground",
+  );
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
   cn(
@@ -23,30 +31,37 @@ export function Layout() {
   const siteName = settings?.site_name ?? "Мои рецепты";
 
   const location = useLocation();
+  const shopping = useQuery({ queryKey: ["shopping"], queryFn: api.shopping.list, enabled: Boolean(user) });
+  const toBuy = shopping.data?.filter((i) => !i.checked).length ?? 0;
+  const nav = [
+    { to: "/", label: "Рецепты", icon: BookOpen, end: true },
+    { to: "/shopping", label: "Покупки", icon: ShoppingBasket, badge: toBuy },
+    { to: "/products", label: "Продукты", icon: Carrot },
+    ...(user?.is_admin ? [{ to: "/admin", label: "Управление", icon: Settings }] : []),
+  ];
   useEffect(() => {
     if (!location.pathname.startsWith("/recipes/") || location.pathname.endsWith("/new")) document.title = siteName;
   }, [siteName, location.pathname]);
 
   return (
     <div className="min-h-svh">
-      <header className="sticky top-0 z-30 border-b border-transparent bg-background/75 backdrop-blur-xl supports-[backdrop-filter]:border-border/60">
+      <header className="sticky top-0 z-30 print:hidden border-b border-transparent bg-background/75 backdrop-blur-xl supports-[backdrop-filter]:border-border/60">
         <div className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 sm:px-6">
           <Link to="/" className="shrink-0">
             <Brand name={siteName} />
           </Link>
 
           <nav className="ml-4 hidden items-center gap-1 sm:flex">
-            <NavLink to="/" end className={navClass}>
-              <BookOpen className="size-4" /> Рецепты
-            </NavLink>
-            <NavLink to="/products" className={navClass}>
-              <Carrot className="size-4" /> Продукты
-            </NavLink>
-            {user?.is_admin && (
-              <NavLink to="/admin" className={navClass}>
-                <Settings className="size-4" /> Управление
+            {nav.map(({ to, label, icon: Icon, end, badge }) => (
+              <NavLink key={to} to={to} end={end} className={navClass}>
+                <Icon className="size-4" /> {label}
+                {badge ? (
+                  <span className="rounded-full bg-primary px-1.5 text-[11px] leading-[18px] font-semibold text-primary-foreground tabular-nums">
+                    {badge}
+                  </span>
+                ) : null}
               </NavLink>
-            )}
+            ))}
           </nav>
 
           <div className="ml-auto flex items-center gap-1">
@@ -80,23 +95,25 @@ export function Layout() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-8 pb-28 sm:px-6 sm:py-10 sm:pb-12">
+      <main className="mx-auto max-w-6xl px-4 py-8 pb-28 sm:px-6 sm:py-10 sm:pb-12 print:p-0">
         <Outlet />
       </main>
 
       {/* Нижняя навигация на телефоне */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 flex justify-center gap-2 border-t bg-background/85 px-4 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur-xl sm:hidden">
-        <NavLink to="/" end className={navClass}>
-          <BookOpen className="size-4" /> Рецепты
-        </NavLink>
-        <NavLink to="/products" className={navClass}>
-          <Carrot className="size-4" /> Продукты
-        </NavLink>
-        {user?.is_admin && (
-          <NavLink to="/admin" className={navClass}>
-            <Settings className="size-4" /> Управление
+      <nav className="fixed inset-x-0 bottom-0 z-30 flex gap-1 print:hidden border-t bg-background/90 px-2 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))] backdrop-blur-xl sm:hidden">
+        {nav.map(({ to, label, icon: Icon, end, badge }) => (
+          <NavLink key={to} to={to} end={end} className={tabClass}>
+            <span className="relative">
+              <Icon className="size-[22px]" strokeWidth={1.75} />
+              {badge ? (
+                <span className="absolute -top-1.5 -right-2.5 min-w-[18px] rounded-full bg-primary px-1 text-center text-[10px] leading-[18px] font-semibold text-primary-foreground tabular-nums">
+                  {badge}
+                </span>
+              ) : null}
+            </span>
+            {label}
           </NavLink>
-        )}
+        ))}
       </nav>
     </div>
   );

@@ -8,10 +8,24 @@ from ..db import get_db
 from .. import importer
 from ..nutrition import fill_from_seed, recipe_nutrition
 from ..images import IMPORT_PREFIX, claim_import_image, delete_image, image_url, save_image, save_image_bytes
-from ..models import Category, Product, Recipe, RecipeIngredient, RecipeStep, Tag, User, recipe_tags, utcnow
+from ..models import (
+    Category,
+    CookLog,
+    Favorite,
+    Product,
+    Recipe,
+    RecipeIngredient,
+    RecipeStep,
+    Tag,
+    User,
+    recipe_tags,
+    utcnow,
+)
 from ..schemas import (
     AuthorOut,
     CategoryRef,
+    CookLogIn,
+    CookLogOut,
     ImportIn,
     IngredientIn,
     IngredientOut,
@@ -63,7 +77,7 @@ def _total(r: Recipe) -> int | None:
     return (r.prep_minutes or 0) + (r.cook_minutes or 0)
 
 
-def _base(r: Recipe) -> dict:
+def _base(r: Recipe, is_favorite: bool = False, cooked_count: int = 0) -> dict:
     return dict(
         id=r.id,
         title=r.title,
@@ -81,6 +95,8 @@ def _base(r: Recipe) -> dict:
             avatar_url=image_url(r.author.avatar),
         ),
         updated_at=r.updated_at,
+        is_favorite=is_favorite,
+        cooked_count=cooked_count,
     )
 
 
@@ -106,9 +122,30 @@ def _nutrition(r: Recipe) -> NutritionOut | None:
     return NutritionOut(per_serving=vals(s), total=vals(1), weight_g=round(n.weight), counted=n.counted, missing=n.missing)
 
 
+def _author(u: User) -> AuthorOut:
+    return AuthorOut(id=u.id, name=u.display_name or u.username, avatar_url=image_url(u.avatar))
+
+
 def _full(r: Recipe, user: User) -> RecipeOut:
+    db = Session.object_session(r)
+    fav = bool(db.get(Favorite, (user.id, r.id))) if db else False
+    logs = (
+        list(db.scalars(select(CookLog).where(CookLog.recipe_id == r.id).order_by(CookLog.cooked_on.desc(), CookLog.id.desc())))
+        if db
+        else []
+    )
     return RecipeOut(
-        **_base(r),
+        **_base(r, fav, len(logs)),
+        cook_log=[
+            CookLogOut(
+                id=c.id,
+                cooked_on=c.cooked_on,
+                note=c.note,
+                author=_author(c.user),
+                can_delete=user.is_admin or c.user_id == user.id,
+            )
+            for c in logs[:50]
+        ],
         source_url=r.source_url,
         nutrition=_nutrition(r),
         prep_minutes=r.prep_minutes,
@@ -137,6 +174,7 @@ def list_recipes(
     category_id: int | None = None,
     tag: str | None = Query(default=None, max_length=64),
     mine: bool = False,
+    favorites: bool = False,
     limit: int = Query(default=24, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
@@ -145,6 +183,8 @@ def list_recipes(
     conds = [_visible(user)]
     if mine:
         conds.append(Recipe.author_id == user.id)
+    if favorites:
+        conds.append(exists().where(Favorite.recipe_id == Recipe.id, Favorite.user_id == user.id))
     if category_id is not None:
         conds.append(Recipe.category_id == category_id)
     if tag:
@@ -176,8 +216,17 @@ def list_recipes(
     total = db.scalar(select(func.count()).select_from(Recipe).where(*conds)) or 0
     rows = db.scalars(
         select(Recipe).where(*conds).order_by(Recipe.updated_at.desc(), Recipe.id.desc()).limit(limit).offset(offset)
-    ).unique()
-    return RecipeListOut(items=[RecipeListItem(**_base(r)) for r in rows], total=total)
+    ).unique().all()
+    ids = [r.id for r in rows]
+    fav_ids = set(db.scalars(select(Favorite.recipe_id).where(Favorite.user_id == user.id, Favorite.recipe_id.in_(ids)))) if ids else set()
+    cooked = (
+        dict(db.execute(select(CookLog.recipe_id, func.count()).where(CookLog.recipe_id.in_(ids)).group_by(CookLog.recipe_id)).all())
+        if ids
+        else {}
+    )
+    return RecipeListOut(
+        items=[RecipeListItem(**_base(r, r.id in fav_ids, cooked.get(r.id, 0))) for r in rows], total=total
+    )
 
 
 @router.get("/{recipe_id}", response_model=RecipeOut)
@@ -373,3 +422,54 @@ def import_recipe(data: ImportIn, db: Session = Depends(get_db), _: User = Depen
         image_url=image_url(image_token),
         source_url=r.source_url[:500],
     )
+
+
+# ---------- избранное и «готовил(а)» ----------
+@router.put("/{recipe_id}/favorite")
+def add_favorite(recipe_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> dict:
+    _get_visible(db, recipe_id, user)
+    if not db.get(Favorite, (user.id, recipe_id)):
+        db.add(Favorite(user_id=user.id, recipe_id=recipe_id))
+        db.commit()
+    return {"is_favorite": True}
+
+
+@router.delete("/{recipe_id}/favorite")
+def remove_favorite(recipe_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> dict:
+    fav = db.get(Favorite, (user.id, recipe_id))
+    if fav:
+        db.delete(fav)
+        db.commit()
+    return {"is_favorite": False}
+
+
+@router.post("/{recipe_id}/cooked", response_model=RecipeOut)
+def mark_cooked(
+    recipe_id: int, data: CookLogIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+) -> RecipeOut:
+    recipe = _get_visible(db, recipe_id, user)
+    db.add(
+        CookLog(
+            user_id=user.id,
+            recipe_id=recipe.id,
+            cooked_on=data.cooked_on or utcnow().date(),
+            note=data.note.strip(),
+        )
+    )
+    db.commit()
+    return _full(recipe, user)
+
+
+@router.delete("/{recipe_id}/cooked/{log_id}", response_model=RecipeOut)
+def delete_cooked(
+    recipe_id: int, log_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+) -> RecipeOut:
+    recipe = _get_visible(db, recipe_id, user)
+    log = db.get(CookLog, log_id)
+    if not log or log.recipe_id != recipe.id:
+        raise HTTPException(404, "Запись не найдена")
+    if not (user.is_admin or log.user_id == user.id):
+        raise HTTPException(403, "Удалить можно только свою запись")
+    db.delete(log)
+    db.commit()
+    return _full(recipe, user)

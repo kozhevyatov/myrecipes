@@ -12,7 +12,7 @@ export function NutritionCard({ nutrition, servings }: { nutrition: Nutrition; s
   const empty = nutrition.counted === 0;
 
   return (
-    <div className="rounded-3xl border bg-card p-5 sm:p-6">
+    <div className="rounded-3xl border bg-card p-5 sm:p-6 print:hidden">
       <div className="flex items-baseline justify-between gap-3">
         <h2 className="text-xl font-semibold">На порцию</h2>
         {!empty && nutrition.weight_g > 0 && (

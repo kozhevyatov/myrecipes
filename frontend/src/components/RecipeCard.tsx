@@ -1,5 +1,6 @@
 import { Link } from "react-router";
-import { Clock, Lock, Users, UtensilsCrossed } from "lucide-react";
+import { CalendarCheck, Clock, Lock, Users, UtensilsCrossed } from "lucide-react";
+import { FavoriteButton } from "@/components/FavoriteButton";
 import { Tag } from "@/components/ui/chip";
 import type { RecipeListItem } from "@/lib/api";
 import { formatMinutes } from "@/lib/format";
@@ -31,11 +32,14 @@ export function RecipeCard({ recipe }: { recipe: RecipeListItem }) {
             {recipe.category.name}
           </span>
         )}
-        {!recipe.is_public && (
-          <span className="absolute top-3 right-3 rounded-full bg-background/90 p-1.5 backdrop-blur" title="Только для вас">
-            <Lock className="size-3.5" />
-          </span>
-        )}
+        <div className="absolute top-3 right-3 flex items-center gap-1.5">
+          {!recipe.is_public && (
+            <span className="rounded-full bg-background/85 p-2 backdrop-blur-md" title="Только для вас">
+              <Lock className="size-3.5" />
+            </span>
+          )}
+          <FavoriteButton key={`${recipe.id}-${recipe.is_favorite}`} recipeId={recipe.id} initial={recipe.is_favorite} size="sm" />
+        </div>
       </div>
       <div className="flex flex-1 flex-col gap-1.5 p-4">
         <h3 className="line-clamp-2 text-[16px] leading-snug font-semibold group-hover:text-primary">{recipe.title}</h3>
@@ -49,6 +53,11 @@ export function RecipeCard({ recipe }: { recipe: RecipeListItem }) {
           <span className="flex items-center gap-1">
             <Users className="size-3.5" /> {recipe.servings}
           </span>
+          {recipe.cooked_count > 0 && (
+            <span className="flex items-center gap-1" title="Сколько раз готовили">
+              <CalendarCheck className="size-3.5" /> {recipe.cooked_count}
+            </span>
+          )}
           {recipe.tags.slice(0, 2).map((t) => (
             <Tag key={t}>{t}</Tag>
           ))}

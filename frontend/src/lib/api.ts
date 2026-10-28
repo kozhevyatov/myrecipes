@@ -73,6 +73,16 @@ export type RecipeListItem = {
   is_public: boolean;
   author: { id: number; name: string; avatar_url: string | null };
   updated_at: string;
+  is_favorite: boolean;
+  cooked_count: number;
+};
+
+export type CookLogEntry = {
+  id: number;
+  cooked_on: string;
+  note: string;
+  author: { id: number; name: string; avatar_url: string | null };
+  can_delete: boolean;
 };
 
 export type NutritionValues = { kcal: number; protein: number; fat: number; carbs: number };
@@ -108,6 +118,7 @@ export type Recipe = RecipeListItem & {
   steps: Step[];
   can_edit: boolean;
   created_at: string;
+  cook_log: CookLogEntry[];
 };
 
 export type RecipeInput = {
@@ -142,7 +153,15 @@ export type RecipeDraft = {
   source_url: string;
 };
 
-export type RecipeQuery = { q?: string; category_id?: number; tag?: string; mine?: boolean; limit?: number; offset?: number };
+export type RecipeQuery = {
+  q?: string;
+  category_id?: number;
+  tag?: string;
+  mine?: boolean;
+  favorites?: boolean;
+  limit?: number;
+  offset?: number;
+};
 
 export class ApiError extends Error {
   status: number;
@@ -253,6 +272,8 @@ async function downloadFile(path: string, fallbackName: string): Promise<void> {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
+export type ShoppingItem = { id: number; name: string; amount: number | null; unit: string; note: string; checked: boolean };
+
 export type RestoreResult = { created: number; skipped: number; failed: number; errors: string[] };
 
 const json = (data: unknown) => JSON.stringify(data);
@@ -318,6 +339,12 @@ export const api = {
       return request<Recipe>(`/api/recipes/${id}/image`, { method: "POST", body: form });
     },
     removeImage: (id: number) => request<Recipe>(`/api/recipes/${id}/image`, { method: "DELETE" }),
+    setFavorite: (id: number, on: boolean) =>
+      request<{ is_favorite: boolean }>(`/api/recipes/${id}/favorite`, { method: on ? "PUT" : "DELETE" }),
+    markCooked: (id: number, data: { cooked_on: string; note: string }) =>
+      request<Recipe>(`/api/recipes/${id}/cooked`, { method: "POST", body: json(data) }),
+    deleteCooked: (id: number, logId: number) =>
+      request<Recipe>(`/api/recipes/${id}/cooked/${logId}`, { method: "DELETE" }),
     importFromUrl: (url: string) =>
       request<RecipeDraft>("/api/recipes/import", { method: "POST", body: json({ url }) }),
   },
@@ -350,6 +377,21 @@ export const api = {
       return request<User>("/api/me/avatar", { method: "POST", body: form });
     },
     removeAvatar: () => request<User>("/api/me/avatar", { method: "DELETE" }),
+  },
+
+  shopping: {
+    list: () => request<ShoppingItem[]>("/api/shopping"),
+    fromRecipe: (recipe_id: number, servings: number, ingredient_ids?: number[]) =>
+      request<{ added: number; merged: number; items: ShoppingItem[] }>("/api/shopping/from-recipe", {
+        method: "POST",
+        body: json({ recipe_id, servings, ingredient_ids }),
+      }),
+    addText: (text: string) => request<ShoppingItem[]>("/api/shopping/items", { method: "POST", body: json({ text }) }),
+    update: (id: number, data: Partial<Omit<ShoppingItem, "id" | "note">>) =>
+      request<ShoppingItem>(`/api/shopping/items/${id}`, { method: "PATCH", body: json(data) }),
+    remove: (id: number) => request<{ ok: true }>(`/api/shopping/items/${id}`, { method: "DELETE" }),
+    clear: (checkedOnly: boolean) =>
+      request<ShoppingItem[]>(`/api/shopping/clear?checked_only=${checkedOnly}`, { method: "POST" }),
   },
 
   backup: {

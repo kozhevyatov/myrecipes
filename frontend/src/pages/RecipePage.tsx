@@ -3,6 +3,8 @@ import { Link, useNavigate, useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  Printer,
+  ShoppingBasket,
   Check,
   ChefHat,
   Clock,
@@ -20,6 +22,8 @@ import {
 import { toast } from "sonner";
 import { Avatar } from "@/components/Avatar";
 import { RecipeImage } from "@/components/RecipeCard";
+import { CookLog } from "@/components/CookLog";
+import { FavoriteButton } from "@/components/FavoriteButton";
 import { NutritionCard } from "@/components/NutritionCard";
 import { StepTimer } from "@/components/StepTimer";
 import { Button } from "@/components/ui/button";
@@ -46,7 +50,7 @@ function KeepScreenOn() {
   const wake = useWakeLock();
   if (!wake.supported) return null;
   return (
-    <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3">
+    <label className="flex cursor-pointer items-center justify-between gap-3 rounded-xl border bg-card px-4 py-3 print:hidden">
       <span className="flex items-center gap-2.5 text-sm font-semibold">
         <Sun className={cn("size-4", wake.active ? "text-primary" : "text-muted-foreground")} />
         Не гасить экран
@@ -99,6 +103,25 @@ export default function RecipePage() {
 
   const groups = useMemo(() => groupIngredients(recipe?.ingredients ?? []), [recipe]);
 
+  // Отмеченные галочкой ингредиенты считаем «уже есть дома» и в покупки не добавляем
+  const toBuy = useMutation({
+    mutationFn: () => {
+      const ids = (recipe?.ingredients ?? []).map((i) => i.id!).filter((id) => !checked.has(id));
+      return api.shopping.fromRecipe(recipeId, servings, ids);
+    },
+    onSuccess: (r) => {
+      queryClient.setQueryData(["shopping"], r.items);
+      const parts = [];
+      if (r.added) parts.push(`добавлено ${r.added}`);
+      if (r.merged) parts.push(`сложено с уже имеющимися ${r.merged}`);
+      toast.success("В списке покупок", {
+        description: parts.join(", ") || undefined,
+        action: { label: "Открыть", onClick: () => navigate("/shopping") },
+      });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   if (query.isLoading)
     return (
       <div className="flex justify-center py-20">
@@ -128,12 +151,17 @@ export default function RecipePage() {
 
   return (
     <article className="mx-auto grid max-w-5xl gap-8">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex items-center justify-between gap-2 print:hidden">
         <Button variant="ghost" size="sm" onClick={() => (history.length > 1 ? navigate(-1) : navigate("/"))}>
           <ArrowLeft /> Назад
         </Button>
+        <div className="flex items-center gap-2">
+          <FavoriteButton key={`${recipe.id}-${recipe.is_favorite}`} recipeId={recipe.id} initial={recipe.is_favorite} className="size-8" />
+          <Button variant="ghost" size="icon" className="size-8" onClick={() => window.print()} aria-label="Печать" title="Печать">
+            <Printer />
+          </Button>
         {recipe.can_edit && (
-          <div className="flex gap-2">
+          <>
             <Button asChild variant="outline" size="sm">
               <Link to={`/recipes/${recipe.id}/edit`}>
                 <Pencil /> Изменить
@@ -150,13 +178,14 @@ export default function RecipePage() {
             >
               <Trash2 />
             </Button>
-          </div>
+          </>
         )}
+        </div>
       </div>
 
       {/* Шапка */}
-      <header className="grid gap-8 md:grid-cols-[1.15fr_1fr] md:items-center">
-        <div className="aspect-[4/3] overflow-hidden rounded-3xl border bg-muted">
+      <header className="grid gap-8 md:grid-cols-[1.15fr_1fr] md:items-center print:grid-cols-[14rem_1fr] print:gap-6">
+        <div className="aspect-[4/3] overflow-hidden rounded-3xl border bg-muted print:rounded-xl">
           <RecipeImage src={recipe.image_url} alt={recipe.title} />
         </div>
         <div className="grid gap-5">
@@ -199,7 +228,7 @@ export default function RecipePage() {
           </div>
           <div className="flex flex-wrap items-center gap-3">
             {recipe.steps.length > 0 && (
-              <Button asChild size="lg">
+              <Button asChild size="lg" className="print:hidden">
                 <Link to={`/recipes/${recipe.id}/cook?servings=${servings}`}>
                   <ChefHat /> Начать готовить
                 </Link>
@@ -235,14 +264,14 @@ export default function RecipePage() {
         </div>
       </header>
 
-      <div className="grid gap-8 lg:grid-cols-[minmax(0,22rem)_1fr] lg:items-start">
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,22rem)_1fr] lg:items-start print:grid-cols-1 print:gap-5">
         {/* Ингредиенты */}
         <section className="grid gap-4 lg:sticky lg:top-24">
           <KeepScreenOn />
-          <div className="rounded-3xl border bg-card p-5 sm:p-6">
+          <div className="rounded-3xl border bg-card p-5 sm:p-6 print:border-0 print:p-0">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-xl font-semibold">Ингредиенты</h2>
-              <div className="flex items-center gap-1 rounded-full bg-muted p-1">
+              <div className="flex items-center gap-1 rounded-full bg-muted p-1 print:bg-transparent print:p-0">
                 <button
                   className="flex size-8 items-center justify-center rounded-full hover:bg-card disabled:opacity-40"
                   onClick={() => setServings((s) => Math.max(1, s - 1))}
@@ -290,7 +319,7 @@ export default function RecipePage() {
                           <li key={key}>
                             <button
                               onClick={() => setChecked((s) => toggle(s, key))}
-                              className="flex w-full items-start gap-3 rounded-lg px-2 py-2 text-left hover:bg-muted/60"
+                              className="flex w-full items-start gap-3 rounded-lg px-2 py-2 text-left hover:bg-muted/60 print:py-0.5"
                             >
                               <span
                                 className={cn(
@@ -321,6 +350,22 @@ export default function RecipePage() {
                 ))}
               </div>
             )}
+            {recipe.ingredients.length > 0 && (
+              <Button
+                variant="secondary"
+                className="mt-5 w-full print:hidden"
+                disabled={toBuy.isPending || checked.size >= recipe.ingredients.length}
+                onClick={() => toBuy.mutate()}
+              >
+                {toBuy.isPending ? <Loader2 className="animate-spin" /> : <ShoppingBasket />}
+                {checked.size > 0
+                  ? `В список покупок: ${recipe.ingredients.length - checked.size} из ${recipe.ingredients.length}`
+                  : "В список покупок"}
+              </Button>
+            )}
+            {checked.size > 0 && checked.size < recipe.ingredients.length && (
+              <p className="mt-2 text-center text-xs text-muted-foreground">Отмеченные считаются «уже есть»</p>
+            )}
           </div>
           {recipe.nutrition && <NutritionCard nutrition={recipe.nutrition} servings={recipe.servings} />}
         </section>
@@ -339,7 +384,7 @@ export default function RecipePage() {
                   <li
                     key={key}
                     className={cn(
-                      "flex gap-4 rounded-2xl border bg-card p-4 transition-opacity sm:p-5",
+                      "flex gap-4 rounded-2xl border bg-card p-4 transition-opacity sm:p-5 print:border-0 print:p-0 print:py-1.5",
                       done && "opacity-55",
                     )}
                   >
@@ -368,6 +413,8 @@ export default function RecipePage() {
           )}
         </section>
       </div>
+
+      <CookLog recipe={recipe} />
     </article>
   );
 }

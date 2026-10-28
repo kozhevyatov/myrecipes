@@ -114,6 +114,41 @@
   }
 }
 
+/* Печать рецепта: белый лист, без теней и фонов, шаги не рвутся между страницами */
+@media print {
+  @page {
+    margin: 14mm 12mm;
+  }
+  :root,
+  .dark {
+    --background: #fff;
+    --card: #fff;
+    --foreground: #111;
+    --muted: #f3f3f3;
+    --muted-foreground: #555;
+    --border: #ddd;
+    --accent: #f1f1f1;
+    --accent-foreground: #333;
+  }
+  body {
+    font-size: 11pt;
+  }
+  li {
+    break-inside: avoid;
+  }
+  h2 {
+    break-after: avoid;
+  }
+  /* кнопки ± у порций и т. п. */
+  [aria-label="Меньше порций"],
+  [aria-label="Больше порций"] {
+    display: none !important;
+  }
+  * {
+    box-shadow: none !important;
+  }
+}
+
 @layer components {
   /* Крупный заголовок страницы — единственное место, где звучит Unbounded */
   .title-display {

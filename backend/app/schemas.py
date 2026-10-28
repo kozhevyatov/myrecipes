@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -266,6 +266,19 @@ class CategoryRef(BaseModel):
     name: str
 
 
+class CookLogOut(BaseModel):
+    id: int
+    cooked_on: date
+    note: str
+    author: AuthorOut
+    can_delete: bool
+
+
+class CookLogIn(BaseModel):
+    cooked_on: date | None = None
+    note: str = Field(default="", max_length=2000)
+
+
 class RecipeListItem(BaseModel):
     id: int
     title: str
@@ -279,6 +292,8 @@ class RecipeListItem(BaseModel):
     is_public: bool
     author: AuthorOut
     updated_at: datetime
+    is_favorite: bool = False
+    cooked_count: int = 0
 
 
 class RecipeOut(RecipeListItem):
@@ -290,8 +305,45 @@ class RecipeOut(RecipeListItem):
     steps: list[StepOut]
     can_edit: bool
     created_at: datetime
+    cook_log: list[CookLogOut] = []
 
 
 class RecipeListOut(BaseModel):
     items: list[RecipeListItem]
     total: int
+
+
+# ---------- список покупок ----------
+class ShoppingItemOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    amount: float | None
+    unit: str
+    note: str
+    checked: bool
+
+
+class ShoppingAddText(BaseModel):
+    text: str = Field(min_length=1, max_length=200)
+
+
+class ShoppingFromRecipe(BaseModel):
+    recipe_id: int
+    servings: int | None = Field(default=None, ge=1, le=100)
+    # Если указано — добавить только эти ингредиенты
+    ingredient_ids: list[int] | None = None
+
+
+class ShoppingItemUpdate(BaseModel):
+    checked: bool | None = None
+    name: str | None = Field(default=None, min_length=1, max_length=200)
+    amount: float | None = Field(default=None, ge=0, le=1_000_000)
+    unit: str | None = Field(default=None, max_length=32)
+
+
+class ShoppingAdded(BaseModel):
+    added: int
+    merged: int
+    items: list[ShoppingItemOut]

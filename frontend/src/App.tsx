@@ -15,6 +15,7 @@ import RecipeEditPage from "@/pages/RecipeEditPage";
 import CookPage from "@/pages/CookPage";
 import ProfilePage from "@/pages/ProfilePage";
 import ProductsPage from "@/pages/ProductsPage";
+import ShoppingPage from "@/pages/ShoppingPage";
 
 function RequireAuth({ children, admin = false }: { children: ReactNode; admin?: boolean }) {
   const { user } = useAuth();
@@ -79,6 +80,14 @@ export default function App() {
           element={
             <RequireAuth>
               <RecipeEditPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/shopping"
+          element={
+            <RequireAuth>
+              <ShoppingPage />
             </RequireAuth>
           }
         />
