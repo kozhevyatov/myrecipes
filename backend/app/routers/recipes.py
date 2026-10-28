@@ -161,6 +161,13 @@ def _clean(s: str) -> str:
 
 
 def _apply(db: Session, recipe: Recipe, data: RecipeIn) -> None:
+    # Без autoflush: иначе первый же запрос (проверка категории) попытается
+    # записать в БД новый рецепт, у которого ещё нет названия.
+    with db.no_autoflush:
+        _fill(db, recipe, data)
+
+
+def _fill(db: Session, recipe: Recipe, data: RecipeIn) -> None:
     if data.category_id is not None and not db.get(Category, data.category_id):
         raise HTTPException(422, "Категория не найдена")
 

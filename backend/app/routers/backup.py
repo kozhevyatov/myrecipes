@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import ValidationError
 from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.background import BackgroundTask
 
@@ -143,7 +144,11 @@ def _restore(db: Session, user: User, zf: zipfile.ZipFile, manifest: dict, skip_
             db.add(cat)
             db.flush()
             categories[name.lower()] = cat.id
-    db.commit()
+    try:
+        db.commit()
+    except SQLAlchemyError as e:
+        db.rollback()
+        raise HTTPException(500, f"Не удалось создать категории: {getattr(e, 'orig', e)}")
 
     users_by_name = {u.username: u for u in db.scalars(select(User))} if user.is_admin else {}
     created = skipped = failed = 0
@@ -166,7 +171,7 @@ def _restore(db: Session, user: User, zf: zipfile.ZipFile, manifest: dict, skip_
             if cat_name and cat_name.lower() not in categories:
                 cat = Category(name=cat_name[:100])
                 db.add(cat)
-                db.flush()
+                db.commit()  # сразу, чтобы откат следующего рецепта её не потерял
                 categories[cat_name.lower()] = cat.id
 
             data = RecipeIn(
@@ -197,10 +202,11 @@ def _restore(db: Session, user: User, zf: zipfile.ZipFile, manifest: dict, skip_
                         pass  # битое фото — рецепт всё равно восстанавливаем
             db.commit()
             created += 1
-        except (ValidationError, HTTPException, ValueError, TypeError) as e:
+        except (ValidationError, HTTPException, ValueError, TypeError, SQLAlchemyError) as e:
             db.rollback()
             failed += 1
+            msg = getattr(e, "detail", None) or str(getattr(e, "orig", None) or e)
             if len(errors) < 10:
-                errors.append(f"«{title or '?'}»: {getattr(e, 'detail', None) or str(e)[:200]}")
+                errors.append(f"«{title or '?'}»: {str(msg)[:200]}")
 
     return {"created": created, "skipped": skipped, "failed": failed, "errors": errors}

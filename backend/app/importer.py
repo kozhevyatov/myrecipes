@@ -270,6 +270,30 @@ def _norm_unit(raw: str | None) -> str:
     return ""
 
 
+# «200 г муки» → «Мука». Только частые продукты: лучше оставить как есть, чем исказить.
+_GENITIVE = {
+    "муки": "мука", "сахара": "сахар", "соли": "соль", "соды": "сода", "воды": "вода", "молока": "молоко",
+    "сметаны": "сметана", "яиц": "яйца", "яблок": "яблоки", "сливочного масла": "сливочное масло",
+    "растительного масла": "растительное масло", "слив. масла": "сливочное масло", "слив масла": "сливочное масло",
+    "творога": "творог", "крахмала": "крахмал", "сливок": "сливки", "уксуса": "уксус", "ванилина": "ванилин",
+    "корицы": "корица", "дрожжей": "дрожжи", "сухих дрожжей": "сухие дрожжи", "кефира": "кефир",
+    "риса": "рис", "фарша": "фарш", "лука": "лук", "моркови": "морковь", "картофеля": "картофель",
+    "сыра": "сыр", "меда": "мёд", "мёда": "мёд", "какао": "какао", "разрыхлителя": "разрыхлитель",
+    "ванильного сахара": "ванильный сахар", "сахарной пудры": "сахарная пудра", "томатной пасты": "томатная паста",
+    "чеснока": "чеснок", "рикотты": "рикотта", "желтков": "желтки", "белков": "белки", "орехов": "орехи",
+}
+
+
+def _nominative(name: str) -> str:
+    low = name.lower().strip()
+    if low in _GENITIVE:
+        return _GENITIVE[low]
+    for gen, nom in _GENITIVE.items():
+        if low.startswith(gen + " "):
+            return nom + name.strip()[len(gen):]
+    return name
+
+
 def _cap(s: str) -> str:
     return s[:1].upper() + s[1:] if s else s
 
@@ -303,13 +327,14 @@ def parse_ingredient(line: str) -> ParsedIngredient:
     name, qty_part = text, ""
     # «Мука — 200 г», «Мука: 200 г»
     sep = re.split(r"\s+[-–—]\s+|\s*:\s+", text, maxsplit=1)
-    if len(sep) == 2 and _QTY_RE.search(sep[1]):
+    # «550 - 600 г муки» — это диапазон, а не «название — количество»
+    if len(sep) == 2 and _QTY_RE.search(sep[1]) and not re.fullmatch(_NUM, sep[0].strip()):
         name, qty_part = sep[0], sep[1]
     else:
         # «200 г муки» — количество в начале
         m = _QTY_RE.match(text)
         if m and m.group("num"):
-            qty_part, name = text[: m.end()], text[m.end() :]
+            qty_part, name = text[: m.end()], _nominative(text[m.end() :].strip())
         else:
             # «Мука 200 г» — количество в конце
             m = re.search(rf"\s(?P<q>(?:{_NUM})(?:\s*[-–—]\s*(?:{_NUM}))?\s*(?:{_UNIT_RE})?\.?)\s*$", text, re.I)
@@ -325,6 +350,11 @@ def parse_ingredient(line: str) -> ParsedIngredient:
             rest = (qty_part[: m.start()] + qty_part[m.end() :]).strip(" ,.;")
             if rest and not note:
                 note = rest
+            # Диапазон «2–3 зубчика», «550–600 г»: берём меньшее, диапазон — в примечание
+            rng = re.match(r"\s*(\S+?)\s*[-–—]\s*(\S+)", m.group(0))
+            if rng and _to_number(rng.group(2).rstrip(".")) is not None:
+                span = re.sub(r"\s*[-–—]\s*", "–", m.group(0).strip(" ,.;"), count=1)
+                note = ", ".join(x for x in (span, note) if x)
     if to_taste and amount is None:
         unit = "по вкусу"
     if amount is not None and not unit:
