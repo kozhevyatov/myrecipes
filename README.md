@@ -17,21 +17,21 @@ docker compose up -d --build
 1. **База данных** — SQLite (файл в `./data`) или MySQL/MariaDB.
 2. **Администратор** — логин, пароль, название сервиса, открыта ли регистрация.
 
-### С MariaDB, уже установленной на NAS
+### База данных: MariaDB на сервере
 
-Отдельный контейнер с БД не нужен — приложение подключается к существующему серверу.
+Отдельный контейнер с БД не поднимается. Приложение подключается к существующему контейнеру MariaDB `db` через внешнюю Docker-сеть `db` (см. `networks` в `docker-compose.yml`).
 
-1. Создайте базу и пользователя (phpMyAdmin или `mysql -u root -p -P 3307 -h 127.0.0.1`):
+1. Создайте базу (phpMyAdmin или `docker exec -it db mariadb -u root -p`):
    ```sql
    CREATE DATABASE recipes CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+   -- по желанию — отдельный пользователь вместо root:
    CREATE USER 'recipes'@'%' IDENTIFIED BY 'надёжный-пароль';
    GRANT ALL PRIVILEGES ON recipes.* TO 'recipes'@'%';
    FLUSH PRIVILEGES;
    ```
-   Пользователь нужен с хостом `%` (или `172.%`): контейнер подключается из сети Docker, а не с localhost.
-2. В приложении **MariaDB 10** на DSM включите «Разрешить подключение по TCP/IP» и посмотрите порт (по умолчанию `3307`).
-3. В мастере выберите MySQL / MariaDB: хост `host.docker.internal`, порт `3307`, база `recipes`, пользователь и пароль из шага 1.
-   Вместо `host.docker.internal` можно указать локальный IP NAS.
+2. В мастере выберите MySQL / MariaDB: хост `db`, порт `3306`, база `recipes`, логин и пароль.
+
+Без MariaDB можно выбрать SQLite: база будет файлом в `./data`.
 
 ## Synology: установка и автодеплой из Gitea
 

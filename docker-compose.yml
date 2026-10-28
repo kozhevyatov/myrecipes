@@ -10,9 +10,8 @@ services:
       - "1331:1331"
     volumes:
       - ./data:/data            # SQLite (если выбран), конфиг, секретный ключ, в будущем — фото
-    extra_hosts:
-      # Адрес самого NAS изнутри контейнера — для MariaDB, установленной на сервере
-      - "host.docker.internal:host-gateway"
+    networks:
+      - db                      # сеть с контейнером MariaDB (хост db)
     environment:
       TZ: Asia/Novosibirsk
       # Защита мастера первого запуска: пока админ не создан, страница настройки
@@ -20,8 +19,12 @@ services:
       # SETUP_TOKEN: "придумайте-длинную-строку"
 
       # Если указать, шаг выбора БД в мастере пропускается.
-      # MariaDB на Synology (пакет MariaDB 10) по умолчанию слушает порт 3307:
-      # DATABASE_URL: "mysql+pymysql://recipes:ПАРОЛЬ@host.docker.internal:3307/recipes?charset=utf8mb4"
+      # DATABASE_URL: "mysql+pymysql://recipes:ПАРОЛЬ@db:3306/recipes?charset=utf8mb4"
 
       # Секрет для JWT. Если не задан — генерируется и хранится в /data/secret.key
       # SECRET_KEY: ""
+
+networks:
+  db:
+    external: true
+    name: db
