@@ -1,0 +1,40 @@
+import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
+import { api, onAuthChange, refreshSession, setSession, type User } from "./api";
+
+type AuthState = {
+  user: User | null;
+  ready: boolean;
+  logout: () => Promise<void>;
+};
+
+const AuthContext = createContext<AuthState | null>(null);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<User | null>(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    const off = onAuthChange(setUser);
+    // Восстанавливаем сессию по refresh-cookie
+    refreshSession().finally(() => setReady(true));
+    return () => {
+      off();
+    };
+  }, []);
+
+  const logout = async () => {
+    try {
+      await api.auth.logout();
+    } finally {
+      setSession(null);
+    }
+  };
+
+  return <AuthContext.Provider value={{ user, ready, logout }}>{children}</AuthContext.Provider>;
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth вне AuthProvider");
+  return ctx;
+}
