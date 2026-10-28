@@ -4,7 +4,9 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
   Check,
+  ChefHat,
   Clock,
+  ExternalLink,
   Flame,
   Gauge,
   Loader2,
@@ -187,6 +189,32 @@ export default function RecipePage() {
               <Meta icon={<Gauge className="size-4" />} label="Сложность" value={DIFFICULTY[recipe.difficulty]} />
             )}
             <Meta icon={<Users className="size-4" />} label="Автор" value={recipe.author.name} />
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            {recipe.steps.length > 0 && (
+              <Button asChild size="lg">
+                <Link to={`/recipes/${recipe.id}/cook?servings=${servings}`}>
+                  <ChefHat /> Начать готовить
+                </Link>
+              </Button>
+            )}
+            {recipe.source_url && (
+              <a
+                href={recipe.source_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-1.5 text-sm font-semibold text-muted-foreground hover:text-foreground"
+              >
+                <ExternalLink className="size-4" />
+                {(() => {
+                  try {
+                    return new URL(recipe.source_url).hostname.replace(/^www\./, "");
+                  } catch {
+                    return "Источник";
+                  }
+                })()}
+              </a>
+            )}
           </div>
           {recipe.tags.length > 0 && (
             <div className="flex flex-wrap gap-1.5">

@@ -8,14 +8,16 @@ from fastapi.staticfiles import StaticFiles
 
 from . import db
 from .config import UPLOAD_DIR, settings
+from .images import cleanup_import_images
 from .routers import admin, auth, catalog, recipes, setup
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     db.startup()
+    cleanup_import_images()
     yield
 
 

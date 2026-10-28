@@ -1,0 +1,423 @@
+"""Импорт рецепта со страницы сайта по разметке schema.org/Recipe (JSON-LD).
+
+Её используют почти все крупные кулинарные сайты: так их рецепты попадают в поиск.
+Только стандартная библиотека — никаких лишних зависимостей.
+"""
+from __future__ import annotations
+
+import html
+import ipaddress
+import json
+import re
+import socket
+import urllib.error
+import urllib.request
+from dataclasses import dataclass, field
+from urllib.parse import urljoin, urlparse
+
+MAX_PAGE_BYTES = 4 * 1024 * 1024
+MAX_IMAGE_BYTES = 15 * 1024 * 1024
+TIMEOUT = 12
+USER_AGENT = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/130.0 Safari/537.36 MyRecipes-Import"
+)
+
+
+class ImportError_(Exception):
+    """Понятная пользователю ошибка импорта."""
+
+
+# ---------------- безопасная загрузка ----------------
+def _check_host(url: str) -> None:
+    """Не даём ходить во внутреннюю сеть (роутер, NAS, другие контейнеры)."""
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        raise ImportError_("Нужна ссылка вида https://…")
+    try:
+        infos = socket.getaddrinfo(parsed.hostname, parsed.port or (443 if parsed.scheme == "https" else 80))
+    except socket.gaierror:
+        raise ImportError_("Сайт не найден — проверьте ссылку")
+    for info in infos:
+        ip = ipaddress.ip_address(info[4][0])
+        if not ip.is_global:
+            raise ImportError_("Ссылки на внутреннюю сеть не поддерживаются")
+
+
+class _SafeRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        _check_host(newurl)
+        return super().redirect_request(req, fp, code, msg, headers, newurl)
+
+
+_opener = urllib.request.build_opener(_SafeRedirect)
+
+
+def fetch(url: str, limit: int, accept: str = "text/html,application/xhtml+xml,*/*;q=0.8") -> tuple[bytes, str, str]:
+    """Возвращает (данные, content-type, итоговый URL)."""
+    _check_host(url)
+    req = urllib.request.Request(
+        url, headers={"User-Agent": USER_AGENT, "Accept": accept, "Accept-Language": "ru,en;q=0.8"}
+    )
+    try:
+        with _opener.open(req, timeout=TIMEOUT) as resp:
+            data = resp.read(limit + 1)
+            if len(data) > limit:
+                raise ImportError_("Страница слишком большая")
+            return data, resp.headers.get("Content-Type", ""), resp.geturl()
+    except urllib.error.HTTPError as e:
+        raise ImportError_(f"Сайт ответил ошибкой {e.code}")
+    except (urllib.error.URLError, TimeoutError, OSError):
+        raise ImportError_("Не удалось открыть страницу — сайт недоступен или долго отвечает")
+
+
+def _decode(data: bytes, content_type: str) -> str:
+    m = re.search(r"charset=([\w-]+)", content_type, re.I)
+    if not m:
+        m = re.search(rb'<meta[^>]+charset=["\']?([\w-]+)', data[:4096], re.I)
+    enc = (m.group(1).decode() if isinstance(m.group(1), bytes) else m.group(1)) if m else "utf-8"
+    try:
+        return data.decode(enc, errors="replace")
+    except LookupError:
+        return data.decode("utf-8", errors="replace")
+
+
+# ---------------- поиск разметки ----------------
+_LD_RE = re.compile(r"<script[^>]+type=[\"']application/ld\+json[\"'][^>]*>(.*?)</script>", re.S | re.I)
+
+
+def _is_recipe(node: dict) -> bool:
+    t = node.get("@type")
+    types = t if isinstance(t, list) else [t]
+    return any(isinstance(x, str) and x.lower().endswith("recipe") for x in types)
+
+
+def _walk(node):  # noqa: ANN001
+    if isinstance(node, list):
+        for item in node:
+            yield from _walk(item)
+    elif isinstance(node, dict):
+        yield node
+        for key in ("@graph", "mainEntity", "mainEntityOfPage", "itemListElement"):
+            if key in node:
+                yield from _walk(node[key])
+
+
+def find_recipe(page: str) -> dict | None:
+    for raw in _LD_RE.findall(page):
+        raw = raw.strip().strip(";")
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError:
+            # Некоторые сайты кладут «сырые» переводы строк внутрь строк JSON
+            try:
+                data = json.loads(re.sub(r"[\r\n\t]+", " ", raw))
+            except json.JSONDecodeError:
+                continue
+        for node in _walk(data):
+            if _is_recipe(node):
+                return node
+    return None
+
+
+def _meta(page: str, prop: str) -> str | None:
+    m = re.search(
+        rf'<meta[^>]+(?:property|name)=["\']{re.escape(prop)}["\'][^>]+content=["\']([^"\']+)', page, re.I
+    ) or re.search(rf'<meta[^>]+content=["\']([^"\']+)["\'][^>]+(?:property|name)=["\']{re.escape(prop)}["\']', page, re.I)
+    return html.unescape(m.group(1)).strip() if m else None
+
+
+# ---------------- нормализация полей ----------------
+def clean_text(value) -> str:  # noqa: ANN001
+    if value is None:
+        return ""
+    if isinstance(value, list):
+        value = " ".join(clean_text(v) for v in value)
+    if isinstance(value, dict):
+        value = value.get("text") or value.get("name") or ""
+    text = re.sub(r"<br\s*/?>|</p>|</li>", "\n", str(value), flags=re.I)
+    text = re.sub(r"<[^>]+>", "", text)
+    text = html.unescape(html.unescape(text)).replace("\xa0", " ")
+    lines = [" ".join(line.split()) for line in text.split("\n")]
+    return "\n".join(line for line in lines if line).strip()
+
+
+def parse_duration(value) -> int | None:  # noqa: ANN001
+    """ISO 8601: PT1H30M → 90."""
+    if not value or not isinstance(value, str):
+        return None
+    m = re.fullmatch(r"P(?:(\d+)D)?(?:T(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?)?", value.strip().upper())
+    if not m:
+        return None
+    d, h, mi, s = (int(x) if x else 0 for x in m.groups())
+    total = d * 1440 + h * 60 + mi + (1 if s >= 30 else 0)
+    return total or None
+
+
+def parse_yield(value) -> int | None:  # noqa: ANN001
+    if isinstance(value, list):
+        for v in value:
+            n = parse_yield(v)
+            if n:
+                return n
+        return None
+    if isinstance(value, (int, float)):
+        return int(value) or None
+    m = re.search(r"\d+", str(value or ""))
+    n = int(m.group()) if m else None
+    return n if n and 0 < n <= 100 else None
+
+
+def _image(value) -> str | None:  # noqa: ANN001
+    if isinstance(value, list):
+        for v in value:
+            url = _image(v)
+            if url:
+                return url
+        return None
+    if isinstance(value, dict):
+        return _image(value.get("url") or value.get("contentUrl"))
+    return value if isinstance(value, str) and value.strip() else None
+
+
+def _steps(value) -> list[str]:  # noqa: ANN001
+    out: list[str] = []
+    if isinstance(value, str):
+        text = clean_text(value)
+        # Одной строкой: «1. Сделать… 2. Потом…» или абзацы
+        parts = re.split(r"\n+|(?<=[.!?])\s+(?=\d{1,2}[.)]\s)", text)
+        out.extend(p for p in parts if p.strip())
+    elif isinstance(value, list):
+        for item in value:
+            out.extend(_steps(item))
+    elif isinstance(value, dict):
+        t = value.get("@type")
+        if t == "HowToSection" or "itemListElement" in value:
+            out.extend(_steps(value.get("itemListElement")))
+        else:
+            text = clean_text(value.get("text") or value.get("name") or value.get("description"))
+            if text:
+                out.append(text)
+    # Убираем «Шаг 1:» / «1.» в начале — номера рисуем сами
+    return [re.sub(r"^(?:шаг\s*)?\d{1,2}\s*[.):\-–—]\s*", "", s, flags=re.I).strip() for s in out if s.strip()]
+
+
+def _list_of_str(value) -> list[str]:  # noqa: ANN001
+    if not value:
+        return []
+    if isinstance(value, str):
+        return [x.strip() for x in re.split(r"[,;]", value) if x.strip()]
+    if isinstance(value, list):
+        return [clean_text(x) for x in value if clean_text(x)]
+    return []
+
+
+# ---------------- разбор строки ингредиента ----------------
+_UNITS: list[tuple[str, str]] = [
+    # (регулярка, как храним) — порядок важен: длинные раньше коротких
+    (r"кг|килограмм\w*", "кг"),
+    (r"г|гр|грамм\w*", "г"),
+    (r"мл|миллилитр\w*", "мл"),
+    (r"л|литр\w*", "л"),
+    (r"ч\.?\s?л\.?|чайн\w*\s+лож\w*|ч\.\s?ложк\w*", "ч. л."),
+    (r"ст\.?\s?л\.?|стол\w*\s+лож\w*|ст\.\s?ложк\w*", "ст. л."),
+    (r"стакан\w*|ст\.?(?=\s|$)", "стакан"),
+    (r"шт\.?|штук\w*", "шт"),
+    (r"щепот\w*", "щепотка"),
+    (r"зубч\w*|зуб\.", "зубчик"),
+    (r"пуч\w*", "пучок"),
+    (r"g|grams?", "г"),
+    (r"kg", "кг"),
+    (r"ml", "мл"),
+    (r"tsp|teaspoons?", "ч. л."),
+    (r"tbsp|tablespoons?", "ст. л."),
+    (r"cups?", "стакан"),
+]
+_UNIT_RE = "|".join(f"(?:{u})" for u, _ in _UNITS)
+_FRAC = {"½": 0.5, "¼": 0.25, "¾": 0.75, "⅓": 1 / 3, "⅔": 2 / 3, "⅛": 0.125}
+_NUM = r"\d+(?:[.,]\d+)?(?:\s*/\s*\d+)?|[½¼¾⅓⅔⅛]|\d+\s*[½¼¾⅓⅔⅛]"
+_QTY_RE = re.compile(
+    rf"(?P<num>{_NUM})(?:\s*[-–—]\s*(?:{_NUM}))?\s*(?P<unit>(?:{_UNIT_RE})(?![а-яa-z]))?",
+    re.I,
+)
+_TO_TASTE = re.compile(r"\b(по вкусу|для подачи|по желанию|to taste)\b", re.I)
+
+
+def _to_number(s: str) -> float | None:
+    s = s.replace(",", ".").replace(" ", "")
+    for ch, v in _FRAC.items():
+        if ch in s:
+            whole = s.replace(ch, "")
+            return (float(whole) if whole else 0) + v
+    if "/" in s:
+        a, b = s.split("/", 1)
+        try:
+            return float(a) / float(b) if float(b) else None
+        except ValueError:
+            return None
+    try:
+        return float(s)
+    except ValueError:
+        return None
+
+
+def _norm_unit(raw: str | None) -> str:
+    if not raw:
+        return ""
+    for pattern, unit in _UNITS:
+        if re.fullmatch(pattern, raw.strip(), re.I):
+            return unit
+    return ""
+
+
+def _cap(s: str) -> str:
+    return s[:1].upper() + s[1:] if s else s
+
+
+@dataclass
+class ParsedIngredient:
+    product: str
+    amount: float | None = None
+    unit: str = ""
+    note: str = ""
+    group: str = ""
+
+
+def parse_ingredient(line: str) -> ParsedIngredient:
+    text = clean_text(line).replace("\n", " ")
+    text = re.sub(r"\s+", " ", text).strip(" •-–—*")
+    note = ""
+
+    # Примечание в скобках: «Лук (средний)»
+    m = re.search(r"\(([^)]{1,80})\)", text)
+    if m and not _QTY_RE.fullmatch(m.group(1).strip()):
+        note = m.group(1).strip()
+        text = (text[: m.start()] + text[m.end() :]).strip()
+    text = re.sub(r"[()]", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+
+    to_taste = bool(_TO_TASTE.search(text))
+    if to_taste:
+        text = _TO_TASTE.sub("", text).strip(" ,-–—:")
+
+    name, qty_part = text, ""
+    # «Мука — 200 г», «Мука: 200 г»
+    sep = re.split(r"\s+[-–—]\s+|\s*:\s+", text, maxsplit=1)
+    if len(sep) == 2 and _QTY_RE.search(sep[1]):
+        name, qty_part = sep[0], sep[1]
+    else:
+        # «200 г муки» — количество в начале
+        m = _QTY_RE.match(text)
+        if m and m.group("num"):
+            qty_part, name = text[: m.end()], text[m.end() :]
+        else:
+            # «Мука 200 г» — количество в конце
+            m = re.search(rf"\s(?P<q>(?:{_NUM})(?:\s*[-–—]\s*(?:{_NUM}))?\s*(?:{_UNIT_RE})?\.?)\s*$", text, re.I)
+            if m:
+                name, qty_part = text[: m.start()], m.group("q")
+
+    amount, unit = None, ""
+    if qty_part:
+        m = _QTY_RE.search(qty_part)
+        if m:
+            amount = _to_number(m.group("num"))
+            unit = _norm_unit(m.group("unit"))
+            rest = (qty_part[: m.start()] + qty_part[m.end() :]).strip(" ,.;")
+            if rest and not note:
+                note = rest
+    if to_taste and amount is None:
+        unit = "по вкусу"
+    if amount is not None and not unit:
+        unit = "шт"
+
+    name = name.strip(" ,.;:-–—")
+    # «Соль, крупная» → продукт + примечание
+    if "," in name:
+        head, tail = name.split(",", 1)
+        if head.strip():
+            name = head.strip()
+            note = ", ".join(x for x in (tail.strip(), note) if x)
+    return ParsedIngredient(product=_cap(name)[:128] or _cap(text)[:128], amount=amount, unit=unit, note=note[:200])
+
+
+def _ingredients(recipe: dict) -> list[ParsedIngredient]:
+    raw = recipe.get("recipeIngredient") or recipe.get("ingredients") or []
+    if isinstance(raw, str):
+        raw = [x for x in raw.split("\n") if x.strip()]
+    out: list[ParsedIngredient] = []
+    for item in raw:
+        line = clean_text(item)
+        if not line:
+            continue
+        # Заголовки разделов вида «Для соуса:» превращаем в группы
+        if re.fullmatch(r"(?:для\s.+|.+:)", line, re.I) and not _QTY_RE.search(line):
+            group = line.rstrip(":").strip()
+            out.append(ParsedIngredient(product="", group=_cap(group)))
+            continue
+        out.append(parse_ingredient(line))
+    # Раскладываем по группам
+    result: list[ParsedIngredient] = []
+    group = ""
+    for ing in out:
+        if not ing.product:
+            group = ing.group
+            continue
+        ing.group = group
+        result.append(ing)
+    return result
+
+
+# ---------------- итог ----------------
+@dataclass
+class ImportedRecipe:
+    title: str
+    description: str = ""
+    servings: int | None = None
+    prep_minutes: int | None = None
+    cook_minutes: int | None = None
+    category: str = ""
+    tags: list[str] = field(default_factory=list)
+    ingredients: list[ParsedIngredient] = field(default_factory=list)
+    steps: list[str] = field(default_factory=list)
+    image_url: str | None = None
+    source_url: str = ""
+
+
+def import_from_url(url: str) -> ImportedRecipe:
+    data, ctype, final_url = fetch(url.strip(), MAX_PAGE_BYTES)
+    page = _decode(data, ctype)
+    node = find_recipe(page)
+    if not node:
+        raise ImportError_(
+            "На странице не нашлось разметки рецепта. Такой сайт пока не поддерживается — рецепт можно внести вручную."
+        )
+
+    prep = parse_duration(node.get("prepTime"))
+    cook = parse_duration(node.get("cookTime"))
+    total = parse_duration(node.get("totalTime"))
+    if total and not prep and not cook:
+        cook = total
+    elif total and prep and not cook and total > prep:
+        cook = total - prep
+
+    image = _image(node.get("image")) or _meta(page, "og:image")
+    tags = [t.lower() for t in _list_of_str(node.get("keywords"))][:10]
+    category = _list_of_str(node.get("recipeCategory"))
+    cuisine = _list_of_str(node.get("recipeCuisine"))
+    for c in cuisine[:2]:
+        if c.lower() not in tags:
+            tags.append(c.lower())
+
+    return ImportedRecipe(
+        title=clean_text(node.get("name")) or _meta(page, "og:title") or "Рецепт",
+        description=clean_text(node.get("description"))[:2000],
+        servings=parse_yield(node.get("recipeYield")),
+        prep_minutes=prep,
+        cook_minutes=cook,
+        category=category[0] if category else "",
+        tags=[t[:64] for t in tags if len(t) <= 64][:12],
+        ingredients=_ingredients(node),
+        steps=_steps(node.get("recipeInstructions"))[:100],
+        image_url=urljoin(final_url, image) if image else None,
+        source_url=final_url,
+    )

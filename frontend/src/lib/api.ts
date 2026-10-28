@@ -75,6 +75,7 @@ export type RecipeListItem = {
 };
 
 export type Recipe = RecipeListItem & {
+  source_url: string | null;
   prep_minutes: number | null;
   cook_minutes: number | null;
   ingredients: Ingredient[];
@@ -92,9 +93,27 @@ export type RecipeInput = {
   cook_minutes: number | null;
   difficulty: number | null;
   is_public: boolean;
+  source_url?: string | null;
+  image_token?: string | null;
   tags: string[];
   ingredients: Omit<Ingredient, "id">[];
   steps: Omit<Step, "id" | "position">[];
+};
+
+export type RecipeDraft = {
+  title: string;
+  description: string;
+  servings: number | null;
+  prep_minutes: number | null;
+  cook_minutes: number | null;
+  category_id: number | null;
+  category_name: string;
+  tags: string[];
+  ingredients: Omit<Ingredient, "id">[];
+  steps: { text: string; timer_minutes: number | null }[];
+  image_token: string | null;
+  image_url: string | null;
+  source_url: string;
 };
 
 export type RecipeQuery = { q?: string; category_id?: number; tag?: string; mine?: boolean; limit?: number; offset?: number };
@@ -243,6 +262,8 @@ export const api = {
       return request<Recipe>(`/api/recipes/${id}/image`, { method: "POST", body: form });
     },
     removeImage: (id: number) => request<Recipe>(`/api/recipes/${id}/image`, { method: "DELETE" }),
+    importFromUrl: (url: string) =>
+      request<RecipeDraft>("/api/recipes/import", { method: "POST", body: json({ url }) }),
   },
 
   catalog: {

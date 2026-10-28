@@ -5,12 +5,17 @@ from sqlalchemy import exists, func, or_, select, true
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..images import delete_image, image_url, save_image
+from .. import importer
+from ..images import IMPORT_PREFIX, claim_import_image, delete_image, image_url, save_image, save_image_bytes
 from ..models import Category, Product, Recipe, RecipeIngredient, RecipeStep, Tag, User, recipe_tags, utcnow
 from ..schemas import (
     AuthorOut,
     CategoryRef,
+    ImportIn,
+    IngredientIn,
     IngredientOut,
+    RecipeDraft,
+    StepIn,
     RecipeIn,
     RecipeListItem,
     RecipeListOut,
@@ -75,6 +80,7 @@ def _base(r: Recipe) -> dict:
 def _full(r: Recipe, user: User) -> RecipeOut:
     return RecipeOut(
         **_base(r),
+        source_url=r.source_url,
         prep_minutes=r.prep_minutes,
         cook_minutes=r.cook_minutes,
         ingredients=[
@@ -166,7 +172,15 @@ def _apply(db: Session, recipe: Recipe, data: RecipeIn) -> None:
     recipe.cook_minutes = data.cook_minutes
     recipe.difficulty = data.difficulty
     recipe.is_public = data.is_public
+    if data.source_url is not None:
+        src = data.source_url.strip()
+        recipe.source_url = src if src.startswith(("http://", "https://")) else None
     recipe.updated_at = utcnow()
+
+    imported = claim_import_image(data.image_token)
+    if imported:
+        delete_image(recipe.image)
+        recipe.image = imported
 
     # Теги: в нижнем регистре, без дублей
     tag_names = list(dict.fromkeys(t for t in (_clean(x).lower().lstrip("#") for x in data.tags) if t))[:30]
@@ -273,3 +287,51 @@ def remove_image(recipe_id: int, db: Session = Depends(get_db), user: User = Dep
     delete_image(old)
     db.refresh(recipe)
     return _full(recipe, user)
+
+
+# ---------- импорт по ссылке ----------
+@router.post("/import", response_model=RecipeDraft)
+def import_recipe(data: ImportIn, db: Session = Depends(get_db), _: User = Depends(get_current_user)) -> RecipeDraft:
+    """Разбирает страницу и возвращает черновик для редактора. Ничего не сохраняет, кроме временного фото."""
+    try:
+        r = importer.import_from_url(data.url)
+    except importer.ImportError_ as e:
+        raise HTTPException(422, str(e))
+
+    image_token = None
+    if r.image_url:
+        try:
+            raw, _ctype, _ = importer.fetch(r.image_url, importer.MAX_IMAGE_BYTES, accept="image/*")
+            image_token = save_image_bytes(raw, prefix=IMPORT_PREFIX)
+        except (importer.ImportError_, HTTPException):
+            image_token = None  # без фото — не страшно
+
+    category = None
+    if r.category:
+        category = db.scalar(select(Category).where(func.lower(Category.name) == r.category.lower()))
+
+    return RecipeDraft(
+        title=r.title[:200],
+        description=r.description[:5000],
+        servings=r.servings,
+        prep_minutes=r.prep_minutes,
+        cook_minutes=r.cook_minutes,
+        category_id=category.id if category else None,
+        category_name="" if category else r.category[:100],
+        tags=r.tags,
+        ingredients=[
+            IngredientIn(
+                product=i.product[:128] or "?",
+                amount=i.amount if i.amount is None or i.amount <= 1_000_000 else None,
+                unit=i.unit[:32],
+                note=i.note[:200],
+                group=i.group[:100],
+            )
+            for i in r.ingredients
+            if i.product
+        ][:200],
+        steps=[StepIn(text=s[:10_000]) for s in r.steps if s][:200],
+        image_token=image_token,
+        image_url=image_url(image_token),
+        source_url=r.source_url[:500],
+    )

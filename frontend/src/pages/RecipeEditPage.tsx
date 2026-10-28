@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowLeft, ArrowUp, ImagePlus, Loader2, Plus, Timer, Trash2, X } from "lucide-react";
+import { ArrowDown, ArrowLeft, ArrowUp, ImagePlus, Link2, Loader2, Plus, Timer, Trash2, Wand2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { api, type Recipe, type RecipeInput } from "@/lib/api";
+import { api, type Recipe, type RecipeDraft, type RecipeInput } from "@/lib/api";
 import { DIFFICULTY, UNITS } from "@/lib/format";
 import { cn } from "@/lib/utils";
 
@@ -33,6 +33,8 @@ type Form = {
   tags: string[];
   groups: Group[];
   steps: StepRow[];
+  source_url: string;
+  image_token: string | null;
 };
 
 const emptyIng = (): IngRow => ({ key: key(), product: "", amount: "", unit: "г", note: "" });
@@ -51,16 +53,18 @@ function emptyForm(): Form {
     tags: [],
     groups: [{ key: key(), name: "", items: [emptyIng(), emptyIng(), emptyIng()] }],
     steps: [emptyStep(), emptyStep()],
+    source_url: "",
+    image_token: null,
   };
 }
 
-function fromRecipe(r: Recipe): Form {
+function toGroups(list: { product: string; amount: number | null; unit: string; note: string; group: string }[]): Group[] {
   const groups: Group[] = [];
-  for (const ing of r.ingredients) {
+  for (const ing of list) {
     const row: IngRow = {
       key: key(),
       product: ing.product,
-      amount: ing.amount != null ? String(ing.amount).replace(".", ",") : "",
+      amount: ing.amount != null ? String(Math.round(ing.amount * 100) / 100).replace(".", ",") : "",
       unit: ing.unit,
       note: ing.note,
     };
@@ -69,6 +73,28 @@ function fromRecipe(r: Recipe): Form {
     else groups.push({ key: key(), name: ing.group, items: [row] });
   }
   if (groups.length === 0) groups.push({ key: key(), name: "", items: [emptyIng()] });
+  return groups;
+}
+
+function fromDraft(d: RecipeDraft): Form {
+  return {
+    ...emptyForm(),
+    title: d.title,
+    description: d.description,
+    category_id: d.category_id ? String(d.category_id) : "",
+    servings: d.servings || 2,
+    prep: d.prep_minutes != null ? String(d.prep_minutes) : "",
+    cook: d.cook_minutes != null ? String(d.cook_minutes) : "",
+    tags: d.tags,
+    groups: toGroups(d.ingredients),
+    steps: d.steps.length ? d.steps.map((s) => ({ key: key(), text: s.text, timer: "" })) : [emptyStep()],
+    source_url: d.source_url,
+    image_token: d.image_token,
+  };
+}
+
+function fromRecipe(r: Recipe): Form {
+  const groups = toGroups(r.ingredients);
   return {
     title: r.title,
     description: r.description,
@@ -83,6 +109,8 @@ function fromRecipe(r: Recipe): Form {
     steps: r.steps.length
       ? r.steps.map((s) => ({ key: key(), text: s.text, timer: s.timer_minutes ? String(s.timer_minutes) : "" }))
       : [emptyStep()],
+    source_url: r.source_url ?? "",
+    image_token: null,
   };
 }
 
@@ -105,6 +133,8 @@ function toInput(f: Form): RecipeInput {
     cook_minutes: int(f.cook),
     difficulty: f.difficulty ? Number(f.difficulty) : null,
     is_public: f.is_public,
+    source_url: f.source_url.trim() || null,
+    image_token: f.image_token,
     tags: f.tags,
     ingredients: f.groups.flatMap((g) =>
       g.items
@@ -243,6 +273,9 @@ export default function RecipeEditPage() {
   const [removeImage, setRemoveImage] = useState(false);
   const [newCategory, setNewCategory] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [importUrl, setImportUrl] = useState("");
+  const [importing, setImporting] = useState(false);
+  const [importedImage, setImportedImage] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -273,7 +306,30 @@ export default function RecipeEditPage() {
   const updateStep = (si: number, patch: Partial<StepRow>) =>
     setForm((f) => ({ ...f, steps: f.steps.map((s, i) => (i === si ? { ...s, ...patch } : s)) }));
 
-  const currentImage = removeImage ? null : (imagePreview ?? existing.data?.image_url ?? null);
+  const currentImage = removeImage ? null : (imagePreview ?? importedImage ?? existing.data?.image_url ?? null);
+
+  async function runImport() {
+    const url = importUrl.trim();
+    if (!url) return;
+    setImporting(true);
+    try {
+      const draft = await api.recipes.importFromUrl(url);
+      setForm(fromDraft(draft));
+      setImportedImage(draft.image_url);
+      setImageFile(null);
+      setRemoveImage(false);
+      // Категории с сайта нет у нас — предложим создать, но не создаём сами
+      setNewCategory(draft.category_id ? null : draft.category_name || null);
+      const n = draft.ingredients.length;
+      toast.success("Рецепт загружен — проверьте и сохраните", {
+        description: `${n} ингредиент(ов), ${draft.steps.length} шаг(ов)${draft.image_url ? ", фото" : ""}`,
+      });
+    } catch (e) {
+      toast.error((e as Error).message);
+    } finally {
+      setImporting(false);
+    }
+  }
 
   async function addCategory() {
     const name = (newCategory ?? "").trim();
@@ -346,6 +402,39 @@ export default function RecipeEditPage() {
       </div>
       <h1 className="text-3xl font-extrabold">{editing ? "Редактирование" : "Новый рецепт"}</h1>
 
+      {!editing && (
+        <section className="rounded-2xl border border-primary/30 bg-accent/50 p-5 sm:p-6">
+          <h2 className="flex items-center gap-2 text-lg font-extrabold">
+            <Wand2 className="size-5 text-primary" /> Импорт по ссылке
+          </h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Вставьте ссылку на рецепт с кулинарного сайта — название, фото, ингредиенты и шаги заполнятся сами.
+          </p>
+          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
+            <div className="relative flex-1">
+              <Link2 className="absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                type="url"
+                inputMode="url"
+                placeholder="https://…"
+                className="pl-10"
+                value={importUrl}
+                onChange={(e) => setImportUrl(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault();
+                    runImport();
+                  }
+                }}
+              />
+            </div>
+            <Button type="button" onClick={runImport} disabled={importing || !importUrl.trim()}>
+              {importing ? <Loader2 className="animate-spin" /> : <Wand2 />} Загрузить
+            </Button>
+          </div>
+        </section>
+      )}
+
       {/* Основное */}
       <Section title="Основное">
         <div className="grid gap-5">
@@ -372,6 +461,8 @@ export default function RecipeEditPage() {
                   className="justify-self-start text-xs font-semibold text-muted-foreground hover:text-destructive"
                   onClick={() => {
                     setImageFile(null);
+                    setImportedImage(null);
+                    set("image_token", null);
                     setRemoveImage(true);
                   }}
                 >
@@ -387,6 +478,8 @@ export default function RecipeEditPage() {
                   const file = e.target.files?.[0];
                   if (file) {
                     setImageFile(file);
+                    setImportedImage(null);
+                    set("image_token", null);
                     setRemoveImage(false);
                   }
                   e.target.value = "";
@@ -497,6 +590,17 @@ export default function RecipeEditPage() {
             </span>
             <Switch checked={form.is_public} onCheckedChange={(v) => set("is_public", v)} />
           </label>
+
+          <Field id="source_url" label="Источник" hint="Ссылка на оригинал рецепта — необязательно">
+            <Input
+              id="source_url"
+              type="url"
+              inputMode="url"
+              placeholder="https://…"
+              value={form.source_url}
+              onChange={(e) => set("source_url", e.target.value)}
+            />
+          </Field>
         </div>
       </Section>
 

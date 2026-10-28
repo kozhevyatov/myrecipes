@@ -16,9 +16,11 @@ function readPref(): boolean {
  * поэтому при возврате на страницу запрашиваем её заново.
  * В мобильном приложении (Expo) аналог — expo-keep-awake.
  */
-export function useWakeLock() {
+export function useWakeLock({ force = false }: { force?: boolean } = {}) {
   const supported = typeof navigator !== "undefined" && "wakeLock" in navigator;
-  const [enabled, setEnabled] = useState<boolean>(() => supported && readPref());
+  const [pref, setEnabled] = useState<boolean>(() => supported && readPref());
+  // force — режим готовки: экран не гаснет всегда, без оглядки на настройку
+  const enabled = force || pref;
   const [active, setActive] = useState(false);
   const sentinel = useRef<WakeLockSentinel | null>(null);
 

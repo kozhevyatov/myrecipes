@@ -95,6 +95,7 @@ class Recipe(Base):
     cook_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     difficulty: Mapped[int | None] = mapped_column(Integer, nullable=True)  # 1..3
     image: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     # Публичный — виден всем пользователям сервиса; иначе только автору (и админу)
     is_public: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

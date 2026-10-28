@@ -133,9 +133,34 @@ class RecipeIn(BaseModel):
     cook_minutes: int | None = Field(default=None, ge=0, le=10_000)
     difficulty: int | None = Field(default=None, ge=1, le=3)
     is_public: bool = True
+    source_url: str | None = Field(default=None, max_length=500)
+    # Временное фото из импорта по ссылке (imp-….webp)
+    image_token: str | None = Field(default=None, max_length=64)
     tags: list[str] = Field(default_factory=list, max_length=30)
     ingredients: list[IngredientIn] = Field(default_factory=list, max_length=200)
     steps: list[StepIn] = Field(default_factory=list, max_length=200)
+
+
+class ImportIn(BaseModel):
+    url: str = Field(min_length=8, max_length=2000)
+
+
+class RecipeDraft(BaseModel):
+    """Черновик из импорта — заполняет форму редактора, ещё не сохранён."""
+
+    title: str
+    description: str
+    servings: int | None
+    prep_minutes: int | None
+    cook_minutes: int | None
+    category_id: int | None
+    category_name: str
+    tags: list[str]
+    ingredients: list[IngredientIn]
+    steps: list[StepIn]
+    image_token: str | None
+    image_url: str | None
+    source_url: str
 
 
 class IngredientOut(BaseModel):
@@ -180,6 +205,7 @@ class RecipeListItem(BaseModel):
 
 
 class RecipeOut(RecipeListItem):
+    source_url: str | None
     prep_minutes: int | None
     cook_minutes: int | None
     ingredients: list[IngredientOut]
