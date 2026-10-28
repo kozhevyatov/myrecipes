@@ -89,11 +89,28 @@
   }
   html {
     -webkit-tap-highlight-color: transparent;
+    /* не даём iOS увеличивать шрифт при повороте */
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  html,
+  body {
+    /* страница никогда не уезжает вбок */
+    overflow-x: clip;
   }
   body {
     @apply bg-background text-foreground antialiased;
     font-size: 15px;
     line-height: 1.55;
+  }
+  /* iPhone увеличивает страницу, если у поля ввода шрифт меньше 16px, и не возвращает
+     масштаб обратно — появляются поля по краям, нижнее меню уезжает. На телефоне 16px. */
+  @media (max-width: 639px) {
+    input:not([type="checkbox"]):not([type="radio"]):not([type="range"]),
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
   }
   h1,
   h2,
