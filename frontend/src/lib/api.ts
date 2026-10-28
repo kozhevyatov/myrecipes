@@ -434,7 +434,15 @@ export const api = {
       request<User>("/api/admin/users", { method: "POST", body: json(data) }),
     resetPassword: (id: number, password: string) =>
       request<{ ok: true }>(`/api/admin/users/${id}/password`, { method: "POST", body: json({ password }) }),
-    updateUser: (id: number, data: { is_admin?: boolean; is_active?: boolean }) =>
-      request<User>(`/api/admin/users/${id}`, { method: "PATCH", body: json(data) }),
+    updateUser: (
+      id: number,
+      data: { is_admin?: boolean; is_active?: boolean; username?: string; display_name?: string; email?: string },
+    ) => request<User>(`/api/admin/users/${id}`, { method: "PATCH", body: json(data) }),
+    setAvatar: (id: number, blob: Blob) => {
+      const form = new FormData();
+      form.append("file", blob, "avatar.jpg");
+      return request<User>(`/api/admin/users/${id}/avatar`, { method: "POST", body: form });
+    },
+    removeAvatar: (id: number) => request<User>(`/api/admin/users/${id}/avatar`, { method: "DELETE" }),
   },
 };

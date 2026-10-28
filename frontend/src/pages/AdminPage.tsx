@@ -1,14 +1,15 @@
-import { useEffect, useRef, useState, type ChangeEvent } from "react";
+import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Download, KeyRound, Loader2, Pencil, Plus, Shield, Trash2, Upload, UserPlus, X } from "lucide-react";
+import { Camera, Check, Download, KeyRound, Loader2, Pencil, Plus, Shield, Trash2, Upload, UserPlus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { api, type PublicSettings, type User } from "@/lib/api";
+import { api, updateCurrentUser, type PublicSettings, type User } from "@/lib/api";
 import { Avatar } from "@/components/Avatar";
+import { AvatarCropper } from "@/components/AvatarCropper";
 import { useAuth } from "@/lib/auth";
 import { useSettings } from "@/lib/useSettings";
 import { cn } from "@/lib/utils";
@@ -328,6 +329,169 @@ function AddUserForm({ onDone }: { onDone: () => void }) {
   );
 }
 
+function EditUserDialog({ user, onClose }: { user: User; onClose: () => void }) {
+  const { user: me } = useAuth();
+  const queryClient = useQueryClient();
+  const input = useRef<HTMLInputElement>(null);
+  const [current, setCurrent] = useState(user);
+  const [form, setForm] = useState({ username: user.username, display_name: user.display_name, email: user.email });
+  const [file, setFile] = useState<File | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const apply = (u: User) => {
+    setCurrent(u);
+    queryClient.setQueryData<User[]>(["admin-users"], (list) => list?.map((x) => (x.id === u.id ? u : x)));
+    queryClient.invalidateQueries({ queryKey: ["recipes"] });
+    if (u.id === me?.id) updateCurrentUser(u);
+  };
+
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && !file && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose, file]);
+
+  const changed =
+    form.username.trim() !== current.username ||
+    form.display_name.trim() !== current.display_name ||
+    form.email.trim().toLowerCase() !== current.email;
+
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    try {
+      apply(
+        await api.admin.updateUser(user.id, {
+          username: form.username.trim(),
+          display_name: form.display_name.trim(),
+          email: form.email.trim(),
+        }),
+      );
+      toast.success("Профиль сохранён");
+      onClose();
+    } catch (err) {
+      toast.error((err as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const name = current.display_name || current.username;
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/45 backdrop-blur-sm sm:items-center sm:p-4" role="dialog" aria-modal onClick={onClose}>
+      <div
+        className="max-h-[92svh] w-full max-w-md overflow-y-auto rounded-t-3xl border bg-card p-6 pb-[max(1.5rem,env(safe-area-inset-bottom))] shadow-xl sm:rounded-3xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between">
+          <h2 className="text-lg font-semibold">Профиль пользователя</h2>
+          <Button variant="ghost" size="icon" onClick={onClose} aria-label="Закрыть">
+            <X />
+          </Button>
+        </div>
+
+        <div className="mt-4 flex items-center gap-4">
+          <button
+            type="button"
+            onClick={() => input.current?.click()}
+            className="group relative shrink-0 rounded-full outline-none focus-visible:ring-4 focus-visible:ring-ring"
+            aria-label="Загрузить фото"
+          >
+            <Avatar src={current.avatar_url} name={name} className="size-20 text-2xl" />
+            <span className="absolute inset-0 flex items-center justify-center rounded-full bg-black/45 text-white opacity-0 transition-opacity group-hover:opacity-100">
+              <Camera className="size-5" />
+            </span>
+          </button>
+          <div className="flex flex-wrap gap-2">
+            <Button size="sm" variant="secondary" onClick={() => input.current?.click()}>
+              <Camera /> {current.avatar_url ? "Сменить фото" : "Загрузить фото"}
+            </Button>
+            {current.avatar_url && (
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={async () => {
+                  try {
+                    apply(await api.admin.removeAvatar(user.id));
+                  } catch (err) {
+                    toast.error((err as Error).message);
+                  }
+                }}
+              >
+                <Trash2 /> Убрать
+              </Button>
+            )}
+          </div>
+          <input
+            ref={input}
+            type="file"
+            accept="image/*"
+            hidden
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) setFile(f);
+              e.target.value = "";
+            }}
+          />
+        </div>
+
+        <form onSubmit={save} className="mt-6 grid gap-4">
+          <Field id="eu-name" label="Имя">
+            <Input id="eu-name" value={form.display_name} onChange={(e) => setForm((f) => ({ ...f, display_name: e.target.value }))} />
+          </Field>
+          <Field id="eu-login" label="Логин" hint="Латиница, цифры, _ . -">
+            <Input
+              id="eu-login"
+              required
+              autoComplete="off"
+              value={form.username}
+              onChange={(e) => setForm((f) => ({ ...f, username: e.target.value }))}
+            />
+          </Field>
+          <Field id="eu-email" label="Email">
+            <Input
+              id="eu-email"
+              type="email"
+              required
+              autoComplete="off"
+              value={form.email}
+              onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+            />
+          </Field>
+          <div className="mt-2 flex justify-end gap-2">
+            <Button type="button" variant="ghost" onClick={onClose}>
+              Отмена
+            </Button>
+            <Button type="submit" disabled={busy || !changed}>
+              {busy && <Loader2 className="animate-spin" />} Сохранить
+            </Button>
+          </div>
+        </form>
+      </div>
+
+      {file && (
+        // клики внутри окна кадрирования не должны закрывать окно профиля под ним
+        <div onClick={(e) => e.stopPropagation()}>
+        <AvatarCropper
+          file={file}
+          onCancel={() => setFile(null)}
+          onDone={async (blob) => {
+            try {
+              apply(await api.admin.setAvatar(user.id, blob));
+              toast.success("Фото обновлено");
+              setFile(null);
+            } catch (err) {
+              toast.error((err as Error).message);
+            }
+          }}
+        />
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ResetPassword({ user, onDone }: { user: User; onDone: () => void }) {
   const [password, setPassword] = useState("");
   const reset = useMutation({
@@ -373,6 +537,7 @@ function UsersCard() {
   const users = useQuery({ queryKey: ["admin-users"], queryFn: api.admin.users });
   const [adding, setAdding] = useState(false);
   const [resetFor, setResetFor] = useState<number | null>(null);
+  const [editing, setEditing] = useState<User | null>(null);
 
   const mutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: { is_admin?: boolean; is_active?: boolean } }) =>
@@ -424,6 +589,9 @@ function UsersCard() {
                     @{u.username} · {u.email}
                   </span>
                 </span>
+                <Button size="icon" variant="ghost" aria-label="Изменить профиль" title="Изменить профиль" onClick={() => setEditing(u)}>
+                  <Pencil />
+                </Button>
                 <Button
                   size="icon"
                   variant="ghost"
@@ -454,6 +622,7 @@ function UsersCard() {
             ))}
           </ul>
         )}
+        {editing && <EditUserDialog user={editing} onClose={() => setEditing(null)} />}
       </CardContent>
     </Card>
   );

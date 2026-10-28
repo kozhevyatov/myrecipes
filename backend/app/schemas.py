@@ -122,6 +122,9 @@ class PasswordReset(BaseModel):
 class UserAdminUpdate(BaseModel):
     is_admin: bool | None = None
     is_active: bool | None = None
+    username: str | None = Field(default=None, pattern=USERNAME_PATTERN)
+    display_name: str | None = Field(default=None, max_length=128)
+    email: str | None = Field(default=None, pattern=EMAIL_PATTERN, max_length=255)
 
 
 # ---------- справочники ----------

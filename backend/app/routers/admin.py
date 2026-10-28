@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..app_settings import public_settings, set_setting
 from ..db import get_db
+from ..images import MAX_UPLOAD_BYTES, delete_image, save_avatar_bytes
 from ..models import User
 from ..schemas import PasswordReset, PublicSettings, SettingsUpdate, UserAdminCreate, UserAdminUpdate, UserOut
 from ..security import hash_password, require_admin
@@ -54,7 +55,50 @@ def update_user(
         user.is_active = data.is_active
         if not data.is_active:
             user.token_version += 1
+    if data.username is not None and data.username != user.username:
+        if db.scalar(select(func.count()).select_from(User).where(User.username == data.username, User.id != user.id)):
+            raise HTTPException(409, "Этот логин уже занят")
+        user.username = data.username
+    if data.email is not None:
+        email = data.email.strip().lower()
+        if email != user.email:
+            if db.scalar(select(func.count()).select_from(User).where(User.email == email, User.id != user.id)):
+                raise HTTPException(409, "Этот email уже занят")
+            user.email = email
+    if data.display_name is not None:
+        user.display_name = " ".join(data.display_name.split()) or user.username
     db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.post("/admin/users/{user_id}/avatar", response_model=UserOut)
+async def set_user_avatar(
+    user_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), _: User = Depends(require_admin)
+) -> User:
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "Пользователь не найден")
+    data = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "Файл больше 15 МБ")
+    old = user.avatar
+    user.avatar = save_avatar_bytes(data)
+    db.commit()
+    delete_image(old)
+    db.refresh(user)
+    return user
+
+
+@router.delete("/admin/users/{user_id}/avatar", response_model=UserOut)
+def remove_user_avatar(user_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)) -> User:
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "Пользователь не найден")
+    old = user.avatar
+    user.avatar = None
+    db.commit()
+    delete_image(old)
     db.refresh(user)
     return user
 
