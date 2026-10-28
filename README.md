@@ -25,20 +25,56 @@ docker compose --profile mysql up -d --build
 
 В мастере укажите: хост `mysql`, порт `3306`, база `recipes`, пользователь `recipes`, пароль `recipes-pass` (поменяйте в `docker-compose.yml`).
 
-## Synology (Container Manager)
+## Synology: установка и автодеплой из Gitea
 
-1. Склонируйте репозиторий на NAS, например в `/volume1/docker/myreciept`
-   (через SSH: `git clone https://git.nskarl.ru/nskarl/myreciept.git`).
-2. **Container Manager → Проект → Создать**: путь — эта папка, источник — существующий `docker-compose.yml`. Container Manager сам соберёт образ.
-3. **Панель управления → Портал входа → Дополнительно → Обратный прокси → Создать**:
-   - источник: `HTTPS`, ваш домен, порт `443`;
-   - назначение: `HTTP`, `localhost`, порт `1331`.
-   - Сертификат: **Безопасность → Сертификат** — привяжите Let's Encrypt к домену.
-4. Перед первым запуском на публичном домене задайте `SETUP_TOKEN` в `docker-compose.yml`, чтобы мастер настройки не прошёл кто-то чужой.
+Схема та же, что у остальных проектов:
 
-**Обновление:** `git pull` в папке проекта → в Container Manager у проекта «Остановить» → «Собрать» → «Запустить» (или `docker compose up -d --build` по SSH). Миграции БД применяются автоматически при старте.
+- код — git-клон в `/volume1/docker/myreciept`;
+- скрипт деплоя и лог лежат отдельно от репозитория: `/volume1/docker/deploy/myreciept-deploy.sh` и `myreciept-deploy.log`;
+- Планировщик задач DSM запускает скрипт по расписанию.
 
-**Бэкап:** папка `./data` (для SQLite это всё, что нужно) и `./mysql`, если используете MariaDB.
+Отличие от статических сайтов: при новых коммитах скрипт ещё и пересобирает контейнер (`docker compose up -d --build`). Папки `data/` и `mysql/` в `.gitignore`, обновление их не трогает. Если сборка упала, продолжает работать предыдущая версия, ошибка остаётся в логе.
+
+### 1. Клонирование (один раз, по SSH под root)
+
+```bash
+git clone https://git.nskarl.ru/nskarl/myreciept.git /volume1/docker/myreciept
+```
+
+Авторизуйтесь так же, как в клонах других проектов.
+
+### 2. Скрипт деплоя
+
+Положите `myreciept-deploy.sh` в `/volume1/docker/deploy/`. Первый запуск соберёт и поднимет контейнер:
+
+```bash
+sh /volume1/docker/deploy/myreciept-deploy.sh --force
+```
+
+Проект `myreciept` появится в Container Manager.
+
+### 3. Планировщик задач
+
+Создайте задачу по аналогии с другими проектами (пользователь root):
+
+```
+sh /volume1/docker/deploy/myreciept-deploy.sh
+```
+
+Без новых коммитов скрипт сразу выходит. Ручная пересборка: `sh /volume1/docker/deploy/myreciept-deploy.sh --force`.
+
+Если нужна MariaDB из compose, создайте в `/volume1/docker/myreciept` файл `.env` со строкой `COMPOSE_PROFILES=mysql`. Он в `.gitignore`.
+
+### 4. Домен и HTTPS
+
+**Панель управления → Портал входа → Дополнительно → Обратный прокси → Создать**:
+
+- источник: `HTTPS`, ваш домен, порт `443`;
+- назначение: `HTTP`, `localhost`, порт `1331`.
+
+Перед первым запуском на публичном домене задайте `SETUP_TOKEN` в `docker-compose.yml`, чтобы мастер настройки не прошёл кто-то чужой.
+
+**Бэкап:** `/volume1/docker/myreciept/data` (для SQLite это всё) и `mysql/`, если используете MariaDB.
 
 ## Переменные окружения
 
