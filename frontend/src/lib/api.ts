@@ -273,6 +273,18 @@ async function downloadFile(path: string, fallbackName: string): Promise<void> {
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
 }
 
+export type Person = { id: number; name: string; avatar_url: string | null };
+
+export type ShoppingList = {
+  id: number;
+  name: string;
+  owner: Person;
+  members: Person[];
+  is_owner: boolean;
+  todo: number;
+  total: number;
+};
+
 export type ShoppingItem = { id: number; name: string; amount: number | null; unit: string; note: string; checked: boolean };
 
 export type RestoreResult = { created: number; skipped: number; failed: number; errors: string[] };
@@ -381,18 +393,27 @@ export const api = {
   },
 
   shopping: {
-    list: () => request<ShoppingItem[]>("/api/shopping"),
-    fromRecipe: (recipe_id: number, servings: number, ingredient_ids?: number[]) =>
-      request<{ added: number; merged: number; items: ShoppingItem[] }>("/api/shopping/from-recipe", {
+    lists: () => request<ShoppingList[]>("/api/shopping/lists"),
+    createList: (name: string) => request<ShoppingList>("/api/shopping/lists", { method: "POST", body: json({ name }) }),
+    renameList: (id: number, name: string) =>
+      request<ShoppingList>(`/api/shopping/lists/${id}`, { method: "PATCH", body: json({ name }) }),
+    deleteList: (id: number) => request<{ ok: true }>(`/api/shopping/lists/${id}`, { method: "DELETE" }),
+    users: () => request<Person[]>("/api/shopping/users"),
+    setMembers: (id: number, user_ids: number[]) =>
+      request<ShoppingList>(`/api/shopping/lists/${id}/members`, { method: "PUT", body: json({ user_ids }) }),
+    items: (listId: number) => request<ShoppingItem[]>(`/api/shopping/lists/${listId}/items`),
+    fromRecipe: (listId: number, recipe_id: number, servings: number, ingredient_ids?: number[]) =>
+      request<{ added: number; merged: number; items: ShoppingItem[] }>(`/api/shopping/lists/${listId}/from-recipe`, {
         method: "POST",
         body: json({ recipe_id, servings, ingredient_ids }),
       }),
-    addText: (text: string) => request<ShoppingItem[]>("/api/shopping/items", { method: "POST", body: json({ text }) }),
+    addText: (listId: number, text: string) =>
+      request<ShoppingItem[]>(`/api/shopping/lists/${listId}/items`, { method: "POST", body: json({ text }) }),
     update: (id: number, data: Partial<Omit<ShoppingItem, "id" | "note">>) =>
       request<ShoppingItem>(`/api/shopping/items/${id}`, { method: "PATCH", body: json(data) }),
     remove: (id: number) => request<{ ok: true }>(`/api/shopping/items/${id}`, { method: "DELETE" }),
-    clear: (checkedOnly: boolean) =>
-      request<ShoppingItem[]>(`/api/shopping/clear?checked_only=${checkedOnly}`, { method: "POST" }),
+    clear: (listId: number, checkedOnly: boolean) =>
+      request<ShoppingItem[]>(`/api/shopping/lists/${listId}/clear?checked_only=${checkedOnly}`, { method: "POST" }),
   },
 
   backup: {

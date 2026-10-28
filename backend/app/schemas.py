@@ -314,7 +314,7 @@ class RecipeListOut(BaseModel):
     total: int
 
 
-# ---------- список покупок ----------
+# ---------- списки покупок ----------
 class ShoppingItemOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -324,6 +324,24 @@ class ShoppingItemOut(BaseModel):
     unit: str
     note: str
     checked: bool
+
+
+class ShoppingListOut(BaseModel):
+    id: int
+    name: str
+    owner: AuthorOut
+    members: list[AuthorOut]
+    is_owner: bool
+    todo: int
+    total: int
+
+
+class ShoppingListIn(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+
+
+class ShoppingMembersIn(BaseModel):
+    user_ids: list[int] = Field(default_factory=list, max_length=200)
 
 
 class ShoppingAddText(BaseModel):

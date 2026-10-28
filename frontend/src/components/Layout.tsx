@@ -31,8 +31,8 @@ export function Layout() {
   const siteName = settings?.site_name ?? "Мои рецепты";
 
   const location = useLocation();
-  const shopping = useQuery({ queryKey: ["shopping"], queryFn: api.shopping.list, enabled: Boolean(user) });
-  const toBuy = shopping.data?.filter((i) => !i.checked).length ?? 0;
+  const shopping = useQuery({ queryKey: ["shopping-lists"], queryFn: api.shopping.lists, enabled: Boolean(user) });
+  const toBuy = shopping.data?.reduce((n, l) => n + l.todo, 0) ?? 0;
   const nav = [
     { to: "/", label: "Рецепты", icon: BookOpen, end: true },
     { to: "/shopping", label: "Покупки", icon: ShoppingBasket, badge: toBuy },

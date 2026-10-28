@@ -159,12 +159,36 @@ class RecipeStep(Base):
     recipe: Mapped[Recipe] = relationship(back_populates="steps")
 
 
+class ShoppingList(Base):
+    """Список покупок. Владелец может открыть доступ другим пользователям."""
+
+    __tablename__ = "shopping_lists"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
+
+    owner: Mapped[User] = relationship(lazy="joined")
+    members: Mapped[list[User]] = relationship(secondary="shopping_list_members", lazy="selectin")
+
+
+class ShoppingListMember(Base):
+    __tablename__ = "shopping_list_members"
+
+    list_id: Mapped[int] = mapped_column(ForeignKey("shopping_lists.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+
+
 class ShoppingItem(Base):
-    """Пункт списка покупок. У каждого пользователя свой список."""
+    """Пункт списка покупок."""
 
     __tablename__ = "shopping_items"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    list_id: Mapped[int] = mapped_column(ForeignKey("shopping_lists.id", ondelete="CASCADE"), index=True)
+    # Кто добавил
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
     product_id: Mapped[int | None] = mapped_column(ForeignKey("products.id", ondelete="SET NULL"), nullable=True)
     name: Mapped[str] = mapped_column(String(200))

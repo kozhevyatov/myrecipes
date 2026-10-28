@@ -31,6 +31,7 @@ import { Tag } from "@/components/ui/chip";
 import { Switch } from "@/components/ui/switch";
 import { ApiError, api, type Ingredient } from "@/lib/api";
 import { DIFFICULTY, formatAmount, formatMinutes, plural } from "@/lib/format";
+import { getLastList, setLastList } from "@/lib/shoppingList";
 import { useWakeLock } from "@/lib/useWakeLock";
 import { cn } from "@/lib/utils";
 
@@ -104,17 +105,23 @@ export default function RecipePage() {
   const groups = useMemo(() => groupIngredients(recipe?.ingredients ?? []), [recipe]);
 
   // Отмеченные галочкой ингредиенты считаем «уже есть дома» и в покупки не добавляем
+  const shoppingLists = useQuery({ queryKey: ["shopping-lists"], queryFn: api.shopping.lists });
+  const [targetList, setTargetList] = useState<number | null>(getLastList);
+  const lists = shoppingLists.data ?? [];
+  const target = lists.find((l) => l.id === targetList) ?? lists[0];
   const toBuy = useMutation({
     mutationFn: () => {
       const ids = (recipe?.ingredients ?? []).map((i) => i.id!).filter((id) => !checked.has(id));
-      return api.shopping.fromRecipe(recipeId, servings, ids);
+      return api.shopping.fromRecipe(target!.id, recipeId, servings, ids);
     },
     onSuccess: (r) => {
-      queryClient.setQueryData(["shopping"], r.items);
+      setLastList(target!.id);
+      queryClient.setQueryData(["shopping", target!.id], r.items);
+      queryClient.invalidateQueries({ queryKey: ["shopping-lists"] });
       const parts = [];
       if (r.added) parts.push(`добавлено ${r.added}`);
       if (r.merged) parts.push(`сложено с уже имеющимися ${r.merged}`);
-      toast.success("В списке покупок", {
+      toast.success(lists.length > 1 ? `В списке «${target!.name}»` : "В списке покупок", {
         description: parts.join(", ") || undefined,
         action: { label: "Открыть", onClick: () => navigate("/shopping") },
       });
@@ -354,7 +361,7 @@ export default function RecipePage() {
               <Button
                 variant="secondary"
                 className="mt-5 w-full print:hidden"
-                disabled={toBuy.isPending || checked.size >= recipe.ingredients.length}
+                disabled={toBuy.isPending || !target || checked.size >= recipe.ingredients.length}
                 onClick={() => toBuy.mutate()}
               >
                 {toBuy.isPending ? <Loader2 className="animate-spin" /> : <ShoppingBasket />}
@@ -362,6 +369,25 @@ export default function RecipePage() {
                   ? `В список покупок: ${recipe.ingredients.length - checked.size} из ${recipe.ingredients.length}`
                   : "В список покупок"}
               </Button>
+            )}
+            {lists.length > 1 && (
+              <label className="mt-2 flex items-center justify-center gap-2 text-xs text-muted-foreground print:hidden">
+                в список
+                <select
+                  className="rounded-md border bg-card px-2 py-1 text-xs text-foreground"
+                  value={target?.id}
+                  onChange={(e) => {
+                    setTargetList(Number(e.target.value));
+                    setLastList(Number(e.target.value));
+                  }}
+                >
+                  {lists.map((l) => (
+                    <option key={l.id} value={l.id}>
+                      {l.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
             )}
             {checked.size > 0 && checked.size < recipe.ingredients.length && (
               <p className="mt-2 text-center text-xs text-muted-foreground">Отмеченные считаются «уже есть»</p>
