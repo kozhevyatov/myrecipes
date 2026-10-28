@@ -139,6 +139,48 @@ class CategoryIn(BaseModel):
     sort_order: int = 0
 
 
+class ProductOut(BaseModel):
+    id: int
+    name: str
+    kcal: float | None
+    protein: float | None
+    fat: float | None
+    carbs: float | None
+    piece_grams: float | None
+    density: float | None
+    nutrition_source: str | None
+    recipe_count: int = 0
+
+
+class ProductUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=128)
+    kcal: float | None = Field(default=None, ge=0, le=1000)
+    protein: float | None = Field(default=None, ge=0, le=100)
+    fat: float | None = Field(default=None, ge=0, le=100)
+    carbs: float | None = Field(default=None, ge=0, le=100)
+    piece_grams: float | None = Field(default=None, gt=0, le=100_000)
+    density: float | None = Field(default=None, gt=0, le=20)
+
+
+class ProductMerge(BaseModel):
+    into_id: int
+
+
+class NutritionValues(BaseModel):
+    kcal: float
+    protein: float
+    fat: float
+    carbs: float
+
+
+class NutritionOut(BaseModel):
+    per_serving: NutritionValues
+    total: NutritionValues
+    weight_g: float
+    counted: int
+    missing: list[str]
+
+
 class TagOut(BaseModel):
     name: str
     recipe_count: int = 0
@@ -241,6 +283,7 @@ class RecipeListItem(BaseModel):
 
 class RecipeOut(RecipeListItem):
     source_url: str | None
+    nutrition: NutritionOut | None
     prep_minutes: int | None
     cook_minutes: int | None
     ingredients: list[IngredientOut]

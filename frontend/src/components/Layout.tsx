@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
-import { BookOpen, LogOut, Moon, Settings, Sun } from "lucide-react";
+import { BookOpen, Carrot, LogOut, Moon, Settings, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/Avatar";
 import { Brand } from "@/components/Logo";
@@ -38,6 +38,9 @@ export function Layout() {
           <nav className="ml-4 hidden items-center gap-1 sm:flex">
             <NavLink to="/" end className={navClass}>
               <BookOpen className="size-4" /> Рецепты
+            </NavLink>
+            <NavLink to="/products" className={navClass}>
+              <Carrot className="size-4" /> Продукты
             </NavLink>
             {user?.is_admin && (
               <NavLink to="/admin" className={navClass}>
@@ -85,6 +88,9 @@ export function Layout() {
       <nav className="fixed inset-x-0 bottom-0 z-30 flex justify-center gap-2 border-t bg-background/85 px-4 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur-xl sm:hidden">
         <NavLink to="/" end className={navClass}>
           <BookOpen className="size-4" /> Рецепты
+        </NavLink>
+        <NavLink to="/products" className={navClass}>
+          <Carrot className="size-4" /> Продукты
         </NavLink>
         {user?.is_admin && (
           <NavLink to="/admin" className={navClass}>

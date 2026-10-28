@@ -79,6 +79,16 @@ class Product(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(128), unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # КБЖУ на 100 г
+    kcal: Mapped[float | None] = mapped_column(Float, nullable=True)
+    protein: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fat: Mapped[float | None] = mapped_column(Float, nullable=True)
+    carbs: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Для пересчёта в граммы: вес 1 шт и плотность (г/мл) — для ложек, стаканов, мл
+    piece_grams: Mapped[float | None] = mapped_column(Float, nullable=True)
+    density: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # auto — из встроенного справочника, user — поправлено вручную
+    nutrition_source: Mapped[str | None] = mapped_column(String(16), nullable=True)
 
 
 class Recipe(Base):

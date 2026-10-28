@@ -75,8 +75,33 @@ export type RecipeListItem = {
   updated_at: string;
 };
 
+export type NutritionValues = { kcal: number; protein: number; fat: number; carbs: number };
+export type Nutrition = {
+  per_serving: NutritionValues;
+  total: NutritionValues;
+  weight_g: number;
+  counted: number;
+  missing: string[];
+};
+
+export type Product = {
+  id: number;
+  name: string;
+  kcal: number | null;
+  protein: number | null;
+  fat: number | null;
+  carbs: number | null;
+  piece_grams: number | null;
+  density: number | null;
+  nutrition_source: "auto" | "user" | null;
+  recipe_count: number;
+};
+
+export type ProductPatch = Partial<Omit<Product, "id" | "nutrition_source" | "recipe_count">>;
+
 export type Recipe = RecipeListItem & {
   source_url: string | null;
+  nutrition: Nutrition | null;
   prep_minutes: number | null;
   cook_minutes: number | null;
   ingredients: Ingredient[];
@@ -306,6 +331,12 @@ export const api = {
     deleteCategory: (id: number) => request<{ ok: true }>(`/api/categories/${id}`, { method: "DELETE" }),
     tags: () => request<TagInfo[]>("/api/tags"),
     products: () => request<string[]>("/api/products"),
+    productCatalog: () => request<Product[]>("/api/products/catalog"),
+    updateProduct: (id: number, data: ProductPatch) =>
+      request<Product>(`/api/products/${id}`, { method: "PATCH", body: json(data) }),
+    mergeProduct: (id: number, intoId: number) =>
+      request<Product>(`/api/products/${id}/merge`, { method: "POST", body: json({ into_id: intoId }) }),
+    deleteProduct: (id: number) => request<{ ok: true }>(`/api/products/${id}`, { method: "DELETE" }),
   },
 
   me: {

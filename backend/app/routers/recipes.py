@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from .. import importer
+from ..nutrition import fill_from_seed, recipe_nutrition
 from ..images import IMPORT_PREFIX, claim_import_image, delete_image, image_url, save_image, save_image_bytes
 from ..models import Category, Product, Recipe, RecipeIngredient, RecipeStep, Tag, User, recipe_tags, utcnow
 from ..schemas import (
@@ -14,6 +15,8 @@ from ..schemas import (
     ImportIn,
     IngredientIn,
     IngredientOut,
+    NutritionOut,
+    NutritionValues,
     RecipeDraft,
     StepIn,
     RecipeIn,
@@ -81,10 +84,33 @@ def _base(r: Recipe) -> dict:
     )
 
 
+def _nutrition(r: Recipe) -> NutritionOut | None:
+    if not r.ingredients:
+        return None
+    n = recipe_nutrition(r.ingredients)
+    if n.counted == 0:
+        return NutritionOut(
+            per_serving=NutritionValues(kcal=0, protein=0, fat=0, carbs=0),
+            total=NutritionValues(kcal=0, protein=0, fat=0, carbs=0),
+            weight_g=0,
+            counted=0,
+            missing=n.missing,
+        )
+    s = max(r.servings, 1)
+
+    def vals(div: float) -> NutritionValues:
+        return NutritionValues(
+            kcal=round(n.kcal / div), protein=round(n.protein / div, 1), fat=round(n.fat / div, 1), carbs=round(n.carbs / div, 1)
+        )
+
+    return NutritionOut(per_serving=vals(s), total=vals(1), weight_g=round(n.weight), counted=n.counted, missing=n.missing)
+
+
 def _full(r: Recipe, user: User) -> RecipeOut:
     return RecipeOut(
         **_base(r),
         source_url=r.source_url,
+        nutrition=_nutrition(r),
         prep_minutes=r.prep_minutes,
         cook_minutes=r.cook_minutes,
         ingredients=[
@@ -215,6 +241,7 @@ def _fill(db: Session, recipe: Recipe, data: RecipeIn) -> None:
             found = db.scalar(select(Product).where(func.lower(Product.name) == key))
             if not found:
                 found = Product(name=name)
+                fill_from_seed(found)  # КБЖУ из встроенного справочника, если продукт известен
                 db.add(found)
                 db.flush()
             products[key] = found

@@ -20,6 +20,7 @@ import {
 import { toast } from "sonner";
 import { Avatar } from "@/components/Avatar";
 import { RecipeImage } from "@/components/RecipeCard";
+import { NutritionCard } from "@/components/NutritionCard";
 import { StepTimer } from "@/components/StepTimer";
 import { Button } from "@/components/ui/button";
 import { Tag } from "@/components/ui/chip";
@@ -321,6 +322,7 @@ export default function RecipePage() {
               </div>
             )}
           </div>
+          {recipe.nutrition && <NutritionCard nutrition={recipe.nutrition} servings={recipe.servings} />}
         </section>
 
         {/* Шаги */}

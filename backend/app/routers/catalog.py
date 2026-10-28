@@ -7,8 +7,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ..db import get_db
-from ..models import Category, Product, Recipe, Tag, User, recipe_tags
-from ..schemas import CategoryIn, CategoryOut, TagOut
+from ..models import Category, Product, Recipe, RecipeIngredient, Tag, User, recipe_tags
+from ..schemas import CategoryIn, CategoryOut, ProductMerge, ProductOut, ProductUpdate, TagOut
 from ..security import get_current_user, require_admin
 
 router = APIRouter(prefix="/api", tags=["catalog"])
@@ -94,3 +94,93 @@ def list_tags(db: Session = Depends(get_db), _: User = Depends(get_current_user)
 @router.get("/products", response_model=list[str])
 def list_products(db: Session = Depends(get_db), _: User = Depends(get_current_user)) -> list[str]:
     return list(db.scalars(select(Product.name).order_by(Product.name)))
+
+
+# ---------- справочник продуктов с КБЖУ ----------
+def _product_out(p: Product, count: int) -> ProductOut:
+    return ProductOut(
+        id=p.id,
+        name=p.name,
+        kcal=p.kcal,
+        protein=p.protein,
+        fat=p.fat,
+        carbs=p.carbs,
+        piece_grams=p.piece_grams,
+        density=p.density,
+        nutrition_source=p.nutrition_source,
+        recipe_count=count,
+    )
+
+
+def _usage(db: Session) -> dict[int, int]:
+    return dict(
+        db.execute(
+            select(RecipeIngredient.product_id, func.count(func.distinct(RecipeIngredient.recipe_id))).group_by(
+                RecipeIngredient.product_id
+            )
+        ).all()
+    )
+
+
+@router.get("/products/catalog", response_model=list[ProductOut])
+def products_catalog(db: Session = Depends(get_db), _: User = Depends(get_current_user)) -> list[ProductOut]:
+    usage = _usage(db)
+    return [_product_out(p, usage.get(p.id, 0)) for p in db.scalars(select(Product).order_by(Product.name))]
+
+
+@router.patch("/products/{product_id}", response_model=ProductOut)
+def update_product(
+    product_id: int, data: ProductUpdate, db: Session = Depends(get_db), _: User = Depends(get_current_user)
+) -> ProductOut:
+    p = db.get(Product, product_id)
+    if not p:
+        raise HTTPException(404, "Продукт не найден")
+    fields = data.model_dump(exclude_unset=True)
+    if "name" in fields:
+        name = " ".join(fields.pop("name").split())
+        clash = db.scalar(select(Product).where(func.lower(Product.name) == name.lower(), Product.id != p.id))
+        if clash:
+            raise HTTPException(409, f"«{clash.name}» уже есть — объедините продукты")
+        p.name = name
+    nutrition_keys = {"kcal", "protein", "fat", "carbs"}
+    for key, value in fields.items():
+        setattr(p, key, value)
+    if nutrition_keys & fields.keys():
+        p.nutrition_source = "user"
+    db.commit()
+    return _product_out(p, _usage(db).get(p.id, 0))
+
+
+@router.post("/products/{product_id}/merge", response_model=ProductOut)
+def merge_product(
+    product_id: int, data: ProductMerge, db: Session = Depends(get_db), _: User = Depends(require_admin)
+) -> ProductOut:
+    """Объединяет дубли: все ингредиенты переходят к выбранному продукту, дубль удаляется."""
+    src = db.get(Product, product_id)
+    dst = db.get(Product, data.into_id)
+    if not src or not dst or src.id == dst.id:
+        raise HTTPException(400, "Выберите два разных продукта")
+    db.query(RecipeIngredient).filter(RecipeIngredient.product_id == src.id).update(
+        {RecipeIngredient.product_id: dst.id}
+    )
+    # КБЖУ переносим, только если у целевого их нет
+    for key in ("kcal", "protein", "fat", "carbs", "piece_grams", "density"):
+        if getattr(dst, key) is None and getattr(src, key) is not None:
+            setattr(dst, key, getattr(src, key))
+    if dst.nutrition_source is None:
+        dst.nutrition_source = src.nutrition_source
+    db.delete(src)
+    db.commit()
+    return _product_out(dst, _usage(db).get(dst.id, 0))
+
+
+@router.delete("/products/{product_id}")
+def delete_product(product_id: int, db: Session = Depends(get_db), _: User = Depends(require_admin)) -> dict:
+    p = db.get(Product, product_id)
+    if not p:
+        raise HTTPException(404, "Продукт не найден")
+    if _usage(db).get(p.id):
+        raise HTTPException(409, "Продукт используется в рецептах — его можно только объединить с другим")
+    db.delete(p)
+    db.commit()
+    return {"ok": True}

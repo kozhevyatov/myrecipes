@@ -67,6 +67,22 @@ def init_db(url: str) -> None:
     _engine = make_engine(url)
     run_migrations(_engine)
     _SessionLocal = sessionmaker(bind=_engine, expire_on_commit=False)
+    _backfill_nutrition()
+
+
+def _backfill_nutrition() -> None:
+    """Продукты без КБЖУ, которые есть во встроенном справочнике, получают примерные значения."""
+    from sqlalchemy import select
+
+    from .models import Product
+    from .nutrition import fill_from_seed
+
+    with _SessionLocal() as session:
+        changed = False
+        for product in session.scalars(select(Product).where(Product.kcal.is_(None))):
+            changed |= fill_from_seed(product)
+        if changed:
+            session.commit()
 
 
 def is_configured() -> bool:
