@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Loader2, Shield, UserRound } from "lucide-react";
+import { Check, Loader2, Pencil, Plus, Shield, Trash2, UserRound, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -69,6 +69,129 @@ function SettingsCard() {
             onCheckedChange={(v) => mutation.mutate({ registration_mode: v ? "open" : "closed" })}
           />
         </label>
+      </CardContent>
+    </Card>
+  );
+}
+
+function CategoriesCard() {
+  const queryClient = useQueryClient();
+  const categories = useQuery({ queryKey: ["categories"], queryFn: api.catalog.categories });
+  const [newName, setNewName] = useState("");
+  const [editing, setEditing] = useState<{ id: number; name: string } | null>(null);
+
+  const refresh = () => {
+    queryClient.invalidateQueries({ queryKey: ["categories"] });
+    queryClient.invalidateQueries({ queryKey: ["recipes"] });
+  };
+  const create = useMutation({
+    mutationFn: (name: string) => api.catalog.createCategory(name),
+    onSuccess: () => {
+      setNewName("");
+      refresh();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const update = useMutation({
+    mutationFn: (c: { id: number; name: string; sort_order: number }) =>
+      api.catalog.updateCategory(c.id, { name: c.name, sort_order: c.sort_order }),
+    onSuccess: () => {
+      setEditing(null);
+      refresh();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const remove = useMutation({
+    mutationFn: (id: number) => api.catalog.deleteCategory(id),
+    onSuccess: refresh,
+    onError: (e) => toast.error(e.message),
+  });
+
+  const list = categories.data ?? [];
+  const swap = (i: number, j: number) => {
+    const a = list[i];
+    const b = list[j];
+    if (!a || !b) return;
+    // Пересчитываем порядок всем, чтобы не было одинаковых sort_order
+    list.forEach((c, idx) => {
+      const order = idx === i ? j : idx === j ? i : idx;
+      if (order !== c.sort_order) update.mutate({ id: c.id, name: c.name, sort_order: order });
+    });
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Категории</CardTitle>
+        <CardDescription>Порядок здесь — порядок фильтров на главной. При удалении рецепты остаются без категории.</CardDescription>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <form
+          className="flex gap-2"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (newName.trim()) create.mutate(newName.trim());
+          }}
+        >
+          <Input placeholder="Новая категория" value={newName} onChange={(e) => setNewName(e.target.value)} />
+          <Button type="submit" variant="secondary" disabled={!newName.trim() || create.isPending}>
+            <Plus /> Добавить
+          </Button>
+        </form>
+        {list.length === 0 ? (
+          <p className="text-sm text-muted-foreground">Категорий пока нет.</p>
+        ) : (
+          <ul className="divide-y rounded-xl border">
+            {list.map((c, i) => (
+              <li key={c.id} className="flex items-center gap-2 px-3 py-2">
+                {editing?.id === c.id ? (
+                  <form
+                    className="flex flex-1 items-center gap-2"
+                    onSubmit={(e) => {
+                      e.preventDefault();
+                      if (editing.name.trim()) update.mutate({ id: c.id, name: editing.name.trim(), sort_order: c.sort_order });
+                    }}
+                  >
+                    <Input
+                      autoFocus
+                      className="h-9"
+                      value={editing.name}
+                      onChange={(e) => setEditing({ id: c.id, name: e.target.value })}
+                    />
+                    <Button type="submit" size="icon" variant="ghost" aria-label="Сохранить">
+                      <Check />
+                    </Button>
+                    <Button type="button" size="icon" variant="ghost" aria-label="Отмена" onClick={() => setEditing(null)}>
+                      <X />
+                    </Button>
+                  </form>
+                ) : (
+                  <>
+                    <span className="flex-1 font-semibold">{c.name}</span>
+                    <span className="text-xs text-muted-foreground">{c.recipe_count}</span>
+                    <Button size="icon" variant="ghost" aria-label="Выше" disabled={i === 0} onClick={() => swap(i, i - 1)}>
+                      <span className="text-base leading-none">↑</span>
+                    </Button>
+                    <Button size="icon" variant="ghost" aria-label="Переименовать" onClick={() => setEditing({ id: c.id, name: c.name })}>
+                      <Pencil />
+                    </Button>
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      aria-label="Удалить"
+                      className="hover:text-destructive"
+                      onClick={() => {
+                        if (confirm(`Удалить категорию «${c.name}»?`)) remove.mutate(c.id);
+                      }}
+                    >
+                      <Trash2 />
+                    </Button>
+                  </>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
       </CardContent>
     </Card>
   );
@@ -144,7 +267,10 @@ export default function AdminPage() {
     <div className="grid gap-8">
       <h1 className="text-3xl font-extrabold sm:text-4xl">Управление</h1>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
-        <SettingsCard />
+        <div className="grid content-start gap-6">
+          <SettingsCard />
+          <CategoriesCard />
+        </div>
         <UsersCard />
       </div>
     </div>

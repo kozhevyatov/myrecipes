@@ -15,6 +15,7 @@ from pathlib import Path
 DATA_DIR = Path(os.getenv("DATA_DIR", "/data"))
 CONFIG_FILE = DATA_DIR / "config.json"
 SECRET_FILE = DATA_DIR / "secret.key"
+UPLOAD_DIR = DATA_DIR / "uploads"
 
 
 def _ensure_data_dir() -> None:

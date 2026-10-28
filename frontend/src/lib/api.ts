@@ -44,6 +44,61 @@ export type DatabaseConfig = {
   database?: string;
 };
 
+export type CategoryRef = { id: number; name: string };
+export type Category = CategoryRef & { sort_order: number; recipe_count: number };
+export type TagInfo = { name: string; recipe_count: number };
+
+export type Ingredient = {
+  id?: number;
+  product: string;
+  amount: number | null;
+  unit: string;
+  note: string;
+  group: string;
+};
+
+export type Step = { id?: number; position?: number; text: string; timer_minutes: number | null };
+
+export type RecipeListItem = {
+  id: number;
+  title: string;
+  description: string;
+  image_url: string | null;
+  category: CategoryRef | null;
+  tags: string[];
+  servings: number;
+  total_minutes: number | null;
+  difficulty: number | null;
+  is_public: boolean;
+  author: { id: number; name: string };
+  updated_at: string;
+};
+
+export type Recipe = RecipeListItem & {
+  prep_minutes: number | null;
+  cook_minutes: number | null;
+  ingredients: Ingredient[];
+  steps: Step[];
+  can_edit: boolean;
+  created_at: string;
+};
+
+export type RecipeInput = {
+  title: string;
+  description: string;
+  category_id: number | null;
+  servings: number;
+  prep_minutes: number | null;
+  cook_minutes: number | null;
+  difficulty: number | null;
+  is_public: boolean;
+  tags: string[];
+  ingredients: Omit<Ingredient, "id">[];
+  steps: Omit<Step, "id" | "position">[];
+};
+
+export type RecipeQuery = { q?: string; category_id?: number; tag?: string; mine?: boolean; limit?: number; offset?: number };
+
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -154,8 +209,8 @@ export const api = {
   },
 
   auth: {
-    login: (login: string, password: string) =>
-      request<TokenResponse>("/api/auth/login", { method: "POST", body: json({ login, password }) }),
+    login: (login: string, password: string, remember = true) =>
+      request<TokenResponse>("/api/auth/login", { method: "POST", body: json({ login, password, remember }) }),
     register: (data: { username: string; email: string; display_name: string; password: string }) =>
       request<TokenResponse>("/api/auth/register", { method: "POST", body: json(data) }),
     logout: () => request<{ ok: true }>("/api/auth/logout", { method: "POST" }),
@@ -166,6 +221,39 @@ export const api = {
     get: () => request<PublicSettings>("/api/settings"),
     update: (data: Partial<PublicSettings>) =>
       request<PublicSettings>("/api/admin/settings", { method: "PATCH", body: json(data) }),
+  },
+
+  recipes: {
+    list: (params: RecipeQuery = {}) => {
+      const qs = new URLSearchParams();
+      Object.entries(params).forEach(([k, v]) => {
+        if (v !== undefined && v !== null && v !== "" && v !== false) qs.set(k, String(v));
+      });
+      const query = qs.toString();
+      return request<{ items: RecipeListItem[]; total: number }>(`/api/recipes${query ? `?${query}` : ""}`);
+    },
+    get: (id: number) => request<Recipe>(`/api/recipes/${id}`),
+    create: (data: RecipeInput) => request<Recipe>("/api/recipes", { method: "POST", body: json(data) }),
+    update: (id: number, data: RecipeInput) =>
+      request<Recipe>(`/api/recipes/${id}`, { method: "PUT", body: json(data) }),
+    remove: (id: number) => request<{ ok: true }>(`/api/recipes/${id}`, { method: "DELETE" }),
+    uploadImage: (id: number, file: File) => {
+      const form = new FormData();
+      form.append("file", file);
+      return request<Recipe>(`/api/recipes/${id}/image`, { method: "POST", body: form });
+    },
+    removeImage: (id: number) => request<Recipe>(`/api/recipes/${id}/image`, { method: "DELETE" }),
+  },
+
+  catalog: {
+    categories: () => request<Category[]>("/api/categories"),
+    createCategory: (name: string) =>
+      request<Category>("/api/categories", { method: "POST", body: json({ name }) }),
+    updateCategory: (id: number, data: { name: string; sort_order: number }) =>
+      request<Category>(`/api/categories/${id}`, { method: "PATCH", body: json(data) }),
+    deleteCategory: (id: number) => request<{ ok: true }>(`/api/categories/${id}`, { method: "DELETE" }),
+    tags: () => request<TagInfo[]>("/api/tags"),
+    products: () => request<string[]>("/api/products"),
   },
 
   admin: {

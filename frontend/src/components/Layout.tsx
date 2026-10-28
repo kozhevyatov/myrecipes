@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { Link, NavLink, Outlet, useNavigate } from "react-router";
+import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { BookOpen, LogOut, Moon, Settings, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Brand } from "@/components/Logo";
@@ -21,9 +21,10 @@ export function Layout() {
   const navigate = useNavigate();
   const siteName = settings?.site_name ?? "Мои рецепты";
 
+  const location = useLocation();
   useEffect(() => {
-    document.title = siteName;
-  }, [siteName]);
+    if (!location.pathname.startsWith("/recipes/") || location.pathname.endsWith("/new")) document.title = siteName;
+  }, [siteName, location.pathname]);
 
   return (
     <div className="min-h-svh">

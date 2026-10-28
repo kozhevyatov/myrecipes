@@ -7,10 +7,10 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import db
-from .config import settings
-from .routers import admin, auth, setup
+from .config import UPLOAD_DIR, settings
+from .routers import admin, auth, catalog, recipes, setup
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 
 @asynccontextmanager
@@ -24,6 +24,12 @@ app = FastAPI(title="Мои рецепты API", version=VERSION, lifespan=lifes
 app.include_router(setup.router)
 app.include_router(auth.router)
 app.include_router(admin.router)
+app.include_router(catalog.router)
+app.include_router(recipes.router)
+
+# Загруженные фото. Имена файлов — случайные UUID.
+UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+app.mount("/api/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 
 
 @app.get("/api/health", tags=["system"])

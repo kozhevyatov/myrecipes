@@ -41,10 +41,17 @@ def create_access_token(user: User) -> str:
     )
 
 
-def create_refresh_token(user: User) -> str:
+SHORT_SESSION = timedelta(days=1)
+
+
+def refresh_lifetime(remember: bool) -> timedelta:
+    return timedelta(days=settings.refresh_token_days) if remember else SHORT_SESSION
+
+
+def create_refresh_token(user: User, remember: bool = True) -> str:
     return _encode(
-        {"sub": str(user.id), "type": "refresh", "ver": user.token_version},
-        timedelta(days=settings.refresh_token_days),
+        {"sub": str(user.id), "type": "refresh", "ver": user.token_version, "rem": remember},
+        refresh_lifetime(remember),
     )
 
 

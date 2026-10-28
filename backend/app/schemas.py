@@ -40,6 +40,7 @@ class AdminCreate(BaseModel):
 class LoginIn(BaseModel):
     login: str  # username или email
     password: str
+    remember: bool = True  # «Запомнить меня»
 
 
 class RegisterIn(BaseModel):
@@ -87,3 +88,106 @@ class SettingsUpdate(BaseModel):
 class UserAdminUpdate(BaseModel):
     is_admin: bool | None = None
     is_active: bool | None = None
+
+
+# ---------- справочники ----------
+class CategoryOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    sort_order: int = 0
+    recipe_count: int = 0
+
+
+class CategoryIn(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    sort_order: int = 0
+
+
+class TagOut(BaseModel):
+    name: str
+    recipe_count: int = 0
+
+
+# ---------- рецепты ----------
+class IngredientIn(BaseModel):
+    product: str = Field(min_length=1, max_length=128)
+    amount: float | None = Field(default=None, ge=0, le=1_000_000)
+    unit: str = Field(default="", max_length=32)
+    note: str = Field(default="", max_length=200)
+    group: str = Field(default="", max_length=100)
+
+
+class StepIn(BaseModel):
+    text: str = Field(min_length=1, max_length=10_000)
+    timer_minutes: int | None = Field(default=None, ge=1, le=10_000)
+
+
+class RecipeIn(BaseModel):
+    title: str = Field(min_length=1, max_length=200)
+    description: str = Field(default="", max_length=5000)
+    category_id: int | None = None
+    servings: int = Field(default=2, ge=1, le=100)
+    prep_minutes: int | None = Field(default=None, ge=0, le=10_000)
+    cook_minutes: int | None = Field(default=None, ge=0, le=10_000)
+    difficulty: int | None = Field(default=None, ge=1, le=3)
+    is_public: bool = True
+    tags: list[str] = Field(default_factory=list, max_length=30)
+    ingredients: list[IngredientIn] = Field(default_factory=list, max_length=200)
+    steps: list[StepIn] = Field(default_factory=list, max_length=200)
+
+
+class IngredientOut(BaseModel):
+    id: int
+    product: str
+    amount: float | None
+    unit: str
+    note: str
+    group: str
+
+
+class StepOut(BaseModel):
+    id: int
+    position: int
+    text: str
+    timer_minutes: int | None
+
+
+class AuthorOut(BaseModel):
+    id: int
+    name: str
+
+
+class CategoryRef(BaseModel):
+    id: int
+    name: str
+
+
+class RecipeListItem(BaseModel):
+    id: int
+    title: str
+    description: str
+    image_url: str | None
+    category: CategoryRef | None
+    tags: list[str]
+    servings: int
+    total_minutes: int | None
+    difficulty: int | None
+    is_public: bool
+    author: AuthorOut
+    updated_at: datetime
+
+
+class RecipeOut(RecipeListItem):
+    prep_minutes: int | None
+    cook_minutes: int | None
+    ingredients: list[IngredientOut]
+    steps: list[StepOut]
+    can_edit: bool
+    created_at: datetime
+
+
+class RecipeListOut(BaseModel):
+    items: list[RecipeListItem]
+    total: int

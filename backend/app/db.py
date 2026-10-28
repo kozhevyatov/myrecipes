@@ -29,6 +29,11 @@ def make_engine(url: str) -> Engine:
 
         @event.listens_for(engine, "connect")
         def _sqlite_pragmas(dbapi_conn, _):  # noqa: ANN001
+            # Встроенный lower() в SQLite понимает только ASCII — заменяем на Python,
+            # чтобы поиск по кириллице был регистронезависимым.
+            dbapi_conn.create_function(
+                "lower", 1, lambda s: s.lower() if isinstance(s, str) else s, deterministic=True
+            )
             cur = dbapi_conn.cursor()
             cur.execute("PRAGMA foreign_keys=ON")
             cur.execute("PRAGMA journal_mode=WAL")

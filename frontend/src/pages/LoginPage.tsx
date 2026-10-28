@@ -18,6 +18,7 @@ export default function LoginPage() {
   const from = (location.state as { from?: string } | null)?.from ?? "/";
   const [login, setLogin] = useState("");
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
 
   if (user) return <Navigate to={from} replace />;
@@ -26,7 +27,7 @@ export default function LoginPage() {
     e.preventDefault();
     setBusy(true);
     try {
-      setSession(await api.auth.login(login, password));
+      setSession(await api.auth.login(login, password, remember));
       navigate(from, { replace: true });
     } catch (err) {
       toast.error((err as Error).message);
@@ -58,7 +59,16 @@ export default function LoginPage() {
             onChange={(e) => setPassword(e.target.value)}
           />
         </Field>
-        <Button type="submit" size="lg" disabled={busy} className="mt-2">
+        <label className="flex cursor-pointer items-center gap-2.5 text-sm font-semibold select-none">
+          <input
+            type="checkbox"
+            className="size-4.5 accent-primary"
+            checked={remember}
+            onChange={(e) => setRemember(e.target.checked)}
+          />
+          Запомнить меня
+        </label>
+        <Button type="submit" size="lg" disabled={busy}>
           {busy && <Loader2 className="animate-spin" />} Войти
         </Button>
       </form>
