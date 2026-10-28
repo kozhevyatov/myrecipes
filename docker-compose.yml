@@ -1,46 +1,27 @@
-name: myreciept
+name: myrecipes
 
 services:
   app:
     build: .
-    image: myreciept:latest
-    container_name: myreciept
+    image: myrecipes:latest
+    container_name: myrecipes
     restart: unless-stopped
     ports:
       - "1331:1331"
     volumes:
-      - ./data:/data            # SQLite, конфиг, секретный ключ, в будущем — фото
+      - ./data:/data            # SQLite (если выбран), конфиг, секретный ключ, в будущем — фото
+    extra_hosts:
+      # Адрес самого NAS изнутри контейнера — для MariaDB, установленной на сервере
+      - "host.docker.internal:host-gateway"
     environment:
       TZ: Asia/Novosibirsk
       # Защита мастера первого запуска: пока админ не создан, страница настройки
       # доступна всем, кто знает адрес. Задайте токен — мастер его спросит.
       # SETUP_TOKEN: "придумайте-длинную-строку"
 
-      # Если указать, шаг выбора БД в мастере пропускается:
-      # DATABASE_URL: "mysql+pymysql://recipes:recipes-pass@mysql:3306/recipes?charset=utf8mb4"
-      # DATABASE_URL: "sqlite:////data/recipes.db"
+      # Если указать, шаг выбора БД в мастере пропускается.
+      # MariaDB на Synology (пакет MariaDB 10) по умолчанию слушает порт 3307:
+      # DATABASE_URL: "mysql+pymysql://recipes:ПАРОЛЬ@host.docker.internal:3307/recipes?charset=utf8mb4"
 
       # Секрет для JWT. Если не задан — генерируется и хранится в /data/secret.key
       # SECRET_KEY: ""
-
-  # Опциональная MariaDB. Запуск: docker compose --profile mysql up -d
-  # В мастере: хост mysql, порт 3306, база/пользователь/пароль — как ниже.
-  mysql:
-    image: mariadb:11
-    container_name: myreciept-db
-    profiles: ["mysql"]
-    restart: unless-stopped
-    environment:
-      MARIADB_DATABASE: recipes
-      MARIADB_USER: recipes
-      MARIADB_PASSWORD: recipes-pass
-      MARIADB_ROOT_PASSWORD: change-me-root
-      TZ: Asia/Novosibirsk
-    command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
-    volumes:
-      - ./mysql:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
-      interval: 10s
-      timeout: 5s
-      retries: 5

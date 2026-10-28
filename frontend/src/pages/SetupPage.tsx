@@ -76,9 +76,9 @@ function OptionCard({
 function DatabaseStep({ token, onDone }: { token: string; onDone: () => void }) {
   const [cfg, setCfg] = useState<DatabaseConfig>({
     type: "sqlite",
-    host: "mysql",
+    host: "db",
     port: 3306,
-    user: "recipes",
+    user: "root",
     password: "",
     database: "recipes",
   });
@@ -135,14 +135,14 @@ function DatabaseStep({ token, onDone }: { token: string; onDone: () => void }) 
           }}
           icon={<Server className="size-5" />}
           title="MySQL / MariaDB"
-          text="Свой сервер или контейнер из docker-compose."
+          text="Уже установленный сервер MariaDB или MySQL."
         />
       </div>
 
       {cfg.type === "mysql" && (
         <div className="grid gap-4 rounded-2xl border bg-card p-5">
           <div className="grid grid-cols-[1fr_6rem] gap-3">
-            <Field id="host" label="Хост" hint="Для контейнера из compose — mysql">
+            <Field id="host" label="Хост" hint="Имя контейнера MariaDB, например db">
               <Input id="host" required value={cfg.host ?? ""} onChange={set("host")} />
             </Field>
             <Field id="port" label="Порт">

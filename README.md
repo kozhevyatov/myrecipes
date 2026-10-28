@@ -4,7 +4,7 @@ Self-hosted сервис для хранения рецептов: ингред�
 
 **Стек:** FastAPI + SQLAlchemy 2 + Alembic (SQLite или MySQL/MariaDB) · React 19 + Vite + Tailwind CSS 4 + shadcn/ui · один Docker-контейнер на порту **1331**.
 
-Репозиторий: https://git.nskarl.ru/nskarl/myreciept
+Репозиторий: https://git.nskarl.ru/nskarl/myrecipes
 
 ## Быстрый старт
 
@@ -17,53 +17,59 @@ docker compose up -d --build
 1. **База данных** — SQLite (файл в `./data`) или MySQL/MariaDB.
 2. **Администратор** — логин, пароль, название сервиса, открыта ли регистрация.
 
-### С MariaDB из этого же compose
+### С MariaDB, уже установленной на NAS
 
-```bash
-docker compose --profile mysql up -d --build
-```
+Отдельный контейнер с БД не нужен — приложение подключается к существующему серверу.
 
-В мастере укажите: хост `mysql`, порт `3306`, база `recipes`, пользователь `recipes`, пароль `recipes-pass` (поменяйте в `docker-compose.yml`).
+1. Создайте базу и пользователя (phpMyAdmin или `mysql -u root -p -P 3307 -h 127.0.0.1`):
+   ```sql
+   CREATE DATABASE recipes CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+   CREATE USER 'recipes'@'%' IDENTIFIED BY 'надёжный-пароль';
+   GRANT ALL PRIVILEGES ON recipes.* TO 'recipes'@'%';
+   FLUSH PRIVILEGES;
+   ```
+   Пользователь нужен с хостом `%` (или `172.%`): контейнер подключается из сети Docker, а не с localhost.
+2. В приложении **MariaDB 10** на DSM включите «Разрешить подключение по TCP/IP» и посмотрите порт (по умолчанию `3307`).
+3. В мастере выберите MySQL / MariaDB: хост `host.docker.internal`, порт `3307`, база `recipes`, пользователь и пароль из шага 1.
+   Вместо `host.docker.internal` можно указать локальный IP NAS.
 
 ## Synology: установка и автодеплой из Gitea
 
 Схема та же, что у остальных проектов:
 
-- код — git-клон в `/volume1/docker/myreciept`;
-- скрипт деплоя и лог лежат отдельно от репозитория: `/volume1/docker/deploy/myreciept-deploy.sh` и `myreciept-deploy.log`;
+- код — git-клон в `/volume1/docker/myrecipes`;
+- скрипт деплоя и лог лежат отдельно от репозитория: `/volume1/docker/deploy/myrecipes-deploy.sh` и `myrecipes-deploy.log`;
 - Планировщик задач DSM запускает скрипт по расписанию.
 
-Отличие от статических сайтов: при новых коммитах скрипт ещё и пересобирает контейнер (`docker compose up -d --build`). Папки `data/` и `mysql/` в `.gitignore`, обновление их не трогает. Если сборка упала, продолжает работать предыдущая версия, ошибка остаётся в логе.
+Отличие от статических сайтов: при новых коммитах скрипт ещё и пересобирает контейнер (`docker compose up -d --build`). Папка `data/` в `.gitignore`, обновление их не трогает. Если сборка упала, продолжает работать предыдущая версия, ошибка остаётся в логе.
 
 ### 1. Клонирование (один раз, по SSH под root)
 
 ```bash
-git clone https://git.nskarl.ru/nskarl/myreciept.git /volume1/docker/myreciept
+git clone https://git.nskarl.ru/nskarl/myrecipes.git /volume1/docker/myrecipes
 ```
 
 Авторизуйтесь так же, как в клонах других проектов.
 
 ### 2. Скрипт деплоя
 
-Положите `myreciept-deploy.sh` в `/volume1/docker/deploy/`. Первый запуск соберёт и поднимет контейнер:
+Положите `myrecipes-deploy.sh` в `/volume1/docker/deploy/`. Первый запуск соберёт и поднимет контейнер:
 
 ```bash
-sh /volume1/docker/deploy/myreciept-deploy.sh --force
+sh /volume1/docker/deploy/myrecipes-deploy.sh --force
 ```
 
-Проект `myreciept` появится в Container Manager.
+Проект `myrecipes` появится в Container Manager.
 
 ### 3. Планировщик задач
 
 Создайте задачу по аналогии с другими проектами (пользователь root):
 
 ```
-sh /volume1/docker/deploy/myreciept-deploy.sh
+sh /volume1/docker/deploy/myrecipes-deploy.sh
 ```
 
-Без новых коммитов скрипт сразу выходит. Ручная пересборка: `sh /volume1/docker/deploy/myreciept-deploy.sh --force`.
-
-Если нужна MariaDB из compose, создайте в `/volume1/docker/myreciept` файл `.env` со строкой `COMPOSE_PROFILES=mysql`. Он в `.gitignore`.
+Без новых коммитов скрипт сразу выходит. Ручная пересборка: `sh /volume1/docker/deploy/myrecipes-deploy.sh --force`.
 
 ### 4. Домен и HTTPS
 
@@ -74,7 +80,7 @@ sh /volume1/docker/deploy/myreciept-deploy.sh
 
 Перед первым запуском на публичном домене задайте `SETUP_TOKEN` в `docker-compose.yml`, чтобы мастер настройки не прошёл кто-то чужой.
 
-**Бэкап:** `/volume1/docker/myreciept/data` (для SQLite это всё) и `mysql/`, если используете MariaDB.
+**Бэкап:** `/volume1/docker/myrecipes/data` (конфиг и ключ; для SQLite — и сама база). Базу MariaDB бэкапьте вместе с остальными базами сервера.
 
 ## Переменные окружения
 
