@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { BookOpen, LogOut, Moon, Settings, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Avatar } from "@/components/Avatar";
 import { Brand } from "@/components/Logo";
 import { useAuth } from "@/lib/auth";
 import { useSettings } from "@/lib/useSettings";
@@ -51,9 +52,14 @@ export function Layout() {
             </Button>
             {user && (
               <>
-                <span className="hidden px-2 text-sm text-muted-foreground md:inline">
-                  {user.display_name || user.username}
-                </span>
+                <Link
+                  to="/profile"
+                  className="flex items-center gap-2 rounded-full py-1 pr-1 pl-1 text-sm text-muted-foreground transition-colors outline-none hover:bg-muted hover:text-foreground focus-visible:ring-4 focus-visible:ring-ring md:pr-3"
+                  aria-label="Профиль"
+                >
+                  <Avatar src={user.avatar_url} name={user.display_name || user.username} className="size-8 text-xs" />
+                  <span className="hidden md:inline">{user.display_name || user.username}</span>
+                </Link>
                 <Button
                   variant="ghost"
                   size="icon"

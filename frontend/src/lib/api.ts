@@ -12,6 +12,7 @@ export type User = {
   is_admin: boolean;
   is_active: boolean;
   created_at: string;
+  avatar_url: string | null;
 };
 
 export type TokenResponse = {
@@ -70,7 +71,7 @@ export type RecipeListItem = {
   total_minutes: number | null;
   difficulty: number | null;
   is_public: boolean;
-  author: { id: number; name: string };
+  author: { id: number; name: string; avatar_url: string | null };
   updated_at: string;
 };
 
@@ -138,6 +139,11 @@ export function onAuthChange(fn: (user: User | null) => void) {
 export function setSession(data: TokenResponse | null) {
   accessToken = data?.access_token ?? null;
   listeners.forEach((fn) => fn(data?.user ?? null));
+}
+
+/** Обновить данные текущего пользователя (имя, аватар) без перевыпуска токенов. */
+export function updateCurrentUser(user: User) {
+  listeners.forEach((fn) => fn(user));
 }
 
 function errorMessage(body: unknown, fallback: string): string {
@@ -300,6 +306,19 @@ export const api = {
     deleteCategory: (id: number) => request<{ ok: true }>(`/api/categories/${id}`, { method: "DELETE" }),
     tags: () => request<TagInfo[]>("/api/tags"),
     products: () => request<string[]>("/api/products"),
+  },
+
+  me: {
+    update: (data: { display_name?: string; email?: string }) =>
+      request<User>("/api/me", { method: "PATCH", body: json(data) }),
+    changePassword: (current_password: string, new_password: string) =>
+      request<TokenResponse>("/api/me/password", { method: "POST", body: json({ current_password, new_password }) }),
+    uploadAvatar: (blob: Blob) => {
+      const form = new FormData();
+      form.append("file", blob, "avatar.jpg");
+      return request<User>("/api/me/avatar", { method: "POST", body: form });
+    },
+    removeAvatar: () => request<User>("/api/me/avatar", { method: "DELETE" }),
   },
 
   backup: {

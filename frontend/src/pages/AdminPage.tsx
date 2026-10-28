@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Download, KeyRound, Loader2, Pencil, Plus, Shield, Trash2, Upload, UserPlus, UserRound, X } from "lucide-react";
+import { Check, Download, KeyRound, Loader2, Pencil, Plus, Shield, Trash2, Upload, UserPlus, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -8,6 +8,7 @@ import { Field } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { api, type PublicSettings, type User } from "@/lib/api";
+import { Avatar } from "@/components/Avatar";
 import { useAuth } from "@/lib/auth";
 import { useSettings } from "@/lib/useSettings";
 import { cn } from "@/lib/utils";
@@ -406,8 +407,13 @@ function UsersCard() {
           <ul className="divide-y">
             {users.data?.map((u) => (
               <li key={u.id} className={cn("flex flex-wrap items-center gap-4 px-6 py-4", !u.is_active && "opacity-55")}>
-                <span className="flex size-10 items-center justify-center rounded-full bg-accent text-accent-foreground">
-                  {u.is_admin ? <Shield className="size-5" /> : <UserRound className="size-5" />}
+                <span className="relative">
+                  <Avatar src={u.avatar_url} name={u.display_name || u.username} className="size-10" />
+                  {u.is_admin && (
+                    <span className="absolute -right-0.5 -bottom-0.5 flex size-4.5 items-center justify-center rounded-full bg-primary text-primary-foreground ring-2 ring-card" title="Администратор">
+                      <Shield className="size-2.5" />
+                    </span>
+                  )}
                 </span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate font-semibold">

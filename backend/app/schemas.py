@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 USERNAME_PATTERN = r"^[a-zA-Z0-9_.-]{3,64}$"
 # Простая проверка: домашние адреса вида admin@home.local тоже допустимы.
@@ -64,6 +64,28 @@ class UserOut(BaseModel):
     is_admin: bool
     is_active: bool
     created_at: datetime
+    avatar_url: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _avatar(cls, v):  # noqa: ANN001
+        # ORM-объект: превращаем имя файла в URL
+        if hasattr(v, "avatar") and not isinstance(v, dict):
+            return {
+                **{k: getattr(v, k) for k in ("id", "username", "email", "display_name", "is_admin", "is_active", "created_at")},
+                "avatar_url": f"/api/uploads/{v.avatar}" if v.avatar else None,
+            }
+        return v
+
+
+class ProfileUpdate(BaseModel):
+    display_name: str | None = Field(default=None, max_length=128)
+    email: str | None = Field(default=None, pattern=EMAIL_PATTERN, max_length=255)
+
+
+class PasswordChange(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=128)
 
 
 class TokenOut(BaseModel):
@@ -194,6 +216,7 @@ class StepOut(BaseModel):
 class AuthorOut(BaseModel):
     id: int
     name: str
+    avatar_url: str | None = None
 
 
 class CategoryRef(BaseModel):

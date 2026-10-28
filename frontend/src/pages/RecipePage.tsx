@@ -16,9 +16,9 @@ import {
   Plus,
   Sun,
   Trash2,
-  Users,
 } from "lucide-react";
 import { toast } from "sonner";
+import { Avatar } from "@/components/Avatar";
 import { RecipeImage } from "@/components/RecipeCard";
 import { StepTimer } from "@/components/StepTimer";
 import { Button } from "@/components/ui/button";
@@ -188,7 +188,13 @@ export default function RecipePage() {
             {recipe.difficulty && (
               <Meta icon={<Gauge className="size-4" />} label="Сложность" value={DIFFICULTY[recipe.difficulty]} />
             )}
-            <Meta icon={<Users className="size-4" />} label="Автор" value={recipe.author.name} />
+            <div className="flex items-center gap-2.5">
+              <Avatar src={recipe.author.avatar_url} name={recipe.author.name} />
+              <span className="leading-tight">
+                <span className="block text-xs text-muted-foreground">Автор</span>
+                <span className="block text-sm font-semibold">{recipe.author.name}</span>
+              </span>
+            </div>
           </div>
           <div className="flex flex-wrap items-center gap-3">
             {recipe.steps.length > 0 && (

@@ -9,9 +9,9 @@ from fastapi.staticfiles import StaticFiles
 from . import db
 from .config import UPLOAD_DIR, settings
 from .images import cleanup_import_images
-from .routers import admin, auth, backup, catalog, recipes, setup
+from .routers import admin, auth, backup, catalog, profile, recipes, setup
 
-VERSION = "0.4.0"
+VERSION = "0.5.0"
 
 
 @asynccontextmanager
@@ -29,6 +29,7 @@ app.include_router(admin.router)
 app.include_router(catalog.router)
 app.include_router(recipes.router)
 app.include_router(backup.router)
+app.include_router(profile.router)
 
 # Загруженные фото. Имена файлов — случайные UUID.
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)

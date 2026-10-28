@@ -43,6 +43,21 @@ def save_image_bytes(data: bytes, prefix: str = "") -> str:
     return name
 
 
+def save_avatar_bytes(data: bytes, size: int = 256) -> str:
+    """Аватар: обрезка по центру в квадрат (клиент уже кадрирует, это страховка) и 256×256."""
+    try:
+        img = Image.open(io.BytesIO(data))
+        img = ImageOps.exif_transpose(img)
+        img = img.convert("RGB")
+        img = ImageOps.fit(img, (size, size), Image.Resampling.LANCZOS, centering=(0.5, 0.5))
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
+        raise HTTPException(400, "Это не похоже на изображение")
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+    name = f"avatar-{uuid.uuid4().hex}.webp"
+    img.save(UPLOAD_DIR / name, "WEBP", quality=85, method=4)
+    return name
+
+
 def delete_image(name: str | None) -> None:
     if not name:
         return

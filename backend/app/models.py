@@ -32,6 +32,7 @@ class User(Base):
     password_hash: Mapped[str] = mapped_column(String(255))
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
+    avatar: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Увеличивается при смене пароля/выходе со всех устройств — инвалидирует refresh-токены.
     token_version: Mapped[int] = mapped_column(Integer, default=0)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)

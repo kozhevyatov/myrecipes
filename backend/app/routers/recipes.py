@@ -72,7 +72,11 @@ def _base(r: Recipe) -> dict:
         total_minutes=_total(r),
         difficulty=r.difficulty,
         is_public=r.is_public,
-        author=AuthorOut(id=r.author.id, name=r.author.display_name or r.author.username),
+        author=AuthorOut(
+            id=r.author.id,
+            name=r.author.display_name or r.author.username,
+            avatar_url=image_url(r.author.avatar),
+        ),
         updated_at=r.updated_at,
     )
 

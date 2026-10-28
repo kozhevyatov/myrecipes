@@ -13,6 +13,7 @@ import AdminPage from "@/pages/AdminPage";
 import RecipePage from "@/pages/RecipePage";
 import RecipeEditPage from "@/pages/RecipeEditPage";
 import CookPage from "@/pages/CookPage";
+import ProfilePage from "@/pages/ProfilePage";
 
 function RequireAuth({ children, admin = false }: { children: ReactNode; admin?: boolean }) {
   const { user } = useAuth();
@@ -77,6 +78,14 @@ export default function App() {
           element={
             <RequireAuth>
               <RecipeEditPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/profile"
+          element={
+            <RequireAuth>
+              <ProfilePage />
             </RequireAuth>
           }
         />
