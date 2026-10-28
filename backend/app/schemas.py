@@ -284,6 +284,7 @@ class RecipeListItem(BaseModel):
     title: str
     description: str
     image_url: str | None
+    thumb_url: str | None = None  # уменьшенное фото для карточек
     category: CategoryRef | None
     tags: list[str]
     servings: int

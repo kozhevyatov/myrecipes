@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import db
 from .config import UPLOAD_DIR, settings
-from .images import cleanup_import_images
+from .images import cleanup_import_images, ensure_thumbs
 from .routers import admin, auth, backup, catalog, profile, recipes, setup, shopping
 
 VERSION = "0.6.0"
@@ -18,7 +18,18 @@ VERSION = "0.6.0"
 async def lifespan(_: FastAPI):
     db.startup()
     cleanup_import_images()
+    ensure_thumbs()
     yield
+
+
+class ImmutableStatic(StaticFiles):
+    """Файлы сборки Vite с хешем в имени — кэшируем «навсегда»."""
+
+    async def get_response(self, path, scope):  # noqa: ANN001
+        response = await super().get_response(path, scope)
+        if response.status_code == 200:
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        return response
 
 
 app = FastAPI(title="Мои рецепты API", version=VERSION, lifespan=lifespan)
@@ -34,7 +45,7 @@ app.include_router(shopping.router)
 
 # Загруженные фото. Имена файлов — случайные UUID.
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
-app.mount("/api/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
+app.mount("/api/uploads", ImmutableStatic(directory=UPLOAD_DIR), name="uploads")
 
 
 @app.get("/api/health", tags=["system"])
@@ -43,16 +54,6 @@ def health() -> dict:
 
 
 # ---------- фронтенд (SPA) ----------
-class ImmutableStatic(StaticFiles):
-    """Файлы сборки Vite с хешем в имени — кэшируем «навсегда»."""
-
-    async def get_response(self, path, scope):  # noqa: ANN001
-        response = await super().get_response(path, scope)
-        if response.status_code == 200:
-            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
-        return response
-
-
 static_dir = settings.static_dir
 if (static_dir / "assets").exists():
     app.mount("/assets", ImmutableStatic(directory=static_dir / "assets"), name="assets")

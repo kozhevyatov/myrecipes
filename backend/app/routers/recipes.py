@@ -2,12 +2,12 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy import exists, func, or_, select, true
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, noload
 
 from ..db import get_db
 from .. import importer
 from ..nutrition import fill_from_seed, recipe_nutrition
-from ..images import IMPORT_PREFIX, claim_import_image, delete_image, image_url, save_image, save_image_bytes
+from ..images import IMPORT_PREFIX, claim_import_image, delete_image, image_url, save_image, save_image_bytes, thumb_url
 from ..models import (
     Category,
     CookLog,
@@ -83,6 +83,7 @@ def _base(r: Recipe, is_favorite: bool = False, cooked_count: int = 0) -> dict:
         title=r.title,
         description=r.description,
         image_url=image_url(r.image),
+        thumb_url=thumb_url(r.image),
         category=CategoryRef(id=r.category.id, name=r.category.name) if r.category else None,
         tags=[t.name for t in r.tags],
         servings=r.servings,
@@ -215,7 +216,13 @@ def list_recipes(
 
     total = db.scalar(select(func.count()).select_from(Recipe).where(*conds)) or 0
     rows = db.scalars(
-        select(Recipe).where(*conds).order_by(Recipe.updated_at.desc(), Recipe.id.desc()).limit(limit).offset(offset)
+        select(Recipe)
+        .where(*conds)
+        # Для карточек нужны только название, фото, теги — ингредиенты и шаги не грузим
+        .options(noload(Recipe.ingredients), noload(Recipe.steps))
+        .order_by(Recipe.updated_at.desc(), Recipe.id.desc())
+        .limit(limit)
+        .offset(offset)
     ).unique().all()
     ids = [r.id for r in rows]
     fav_ids = set(db.scalars(select(Favorite.recipe_id).where(Favorite.user_id == user.id, Favorite.recipe_id.in_(ids)))) if ids else set()

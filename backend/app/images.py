@@ -13,11 +13,45 @@ from .config import UPLOAD_DIR
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 MAX_SIDE = 1600
+THUMB_SIDE = 640  # карточки в списке — ~40–70 КБ вместо 150–400 КБ
 Image.MAX_IMAGE_PIXELS = 60_000_000  # защита от «бомб» распаковки
 
 
 def image_url(name: str | None) -> str | None:
     return f"/api/uploads/{name}" if name else None
+
+
+def _thumb_name(name: str) -> str:
+    return name[:-5] + "-sm.webp" if name.endswith(".webp") else name + "-sm.webp"
+
+
+def thumb_url(name: str | None) -> str | None:
+    if not name:
+        return None
+    thumb = _thumb_name(name)
+    return f"/api/uploads/{thumb}" if (UPLOAD_DIR / thumb).exists() else image_url(name)
+
+
+def _save_thumb(img: Image.Image, name: str) -> None:
+    small = img.copy()
+    small.thumbnail((THUMB_SIDE, THUMB_SIDE), Image.Resampling.LANCZOS)
+    small.save(UPLOAD_DIR / _thumb_name(name), "WEBP", quality=78, method=4)
+
+
+def ensure_thumbs() -> None:
+    """Миниатюры для фото, загруженных до их появления (и для восстановленных из архива)."""
+    if not UPLOAD_DIR.exists():
+        return
+    for path in UPLOAD_DIR.glob("*.webp"):
+        n = path.name
+        if n.endswith("-sm.webp") or n.startswith(("avatar-", "imp-")):
+            continue
+        if not (UPLOAD_DIR / _thumb_name(n)).exists():
+            try:
+                with Image.open(path) as img:
+                    _save_thumb(img, n)
+            except (OSError, ValueError):
+                pass
 
 
 async def save_image(file: UploadFile) -> str:
@@ -40,6 +74,7 @@ def save_image_bytes(data: bytes, prefix: str = "") -> str:
     UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
     name = f"{prefix}{uuid.uuid4().hex}.webp"
     img.save(UPLOAD_DIR / name, "WEBP", quality=82, method=4)
+    _save_thumb(img, name)
     return name
 
 
@@ -63,16 +98,17 @@ def delete_image(name: str | None) -> None:
         return
     path = UPLOAD_DIR / name
     # Только файлы из нашей папки, без «../»
-    if path.parent == UPLOAD_DIR and path.exists():
-        try:
-            path.unlink()
-        except OSError:
-            pass
+    for p in (path, UPLOAD_DIR / _thumb_name(name)):
+        if p.parent == UPLOAD_DIR and p.exists():
+            try:
+                p.unlink()
+            except OSError:
+                pass
 
 
 # ---------- временные фото из импорта ----------
 IMPORT_PREFIX = "imp-"
-_IMPORT_RE = re.compile(r"^imp-[0-9a-f]{32}\.webp$")
+_IMPORT_RE = re.compile(r"^imp-[0-9a-f]{32}\.webp$")  # без «-sm»
 
 
 def claim_import_image(token: str | None) -> str | None:
@@ -84,6 +120,9 @@ def claim_import_image(token: str | None) -> str | None:
         return None
     name = f"{uuid.uuid4().hex}.webp"
     src.rename(UPLOAD_DIR / name)
+    thumb = UPLOAD_DIR / _thumb_name(token)
+    if thumb.exists():
+        thumb.rename(UPLOAD_DIR / _thumb_name(name))
     return name
 
 
@@ -92,7 +131,7 @@ def cleanup_import_images(max_age_hours: int = 24) -> None:
     if not UPLOAD_DIR.exists():
         return
     limit = time.time() - max_age_hours * 3600
-    for path in UPLOAD_DIR.glob(f"{IMPORT_PREFIX}*.webp"):
+    for path in UPLOAD_DIR.glob(f"{IMPORT_PREFIX}*.webp"):  # и сами фото, и их миниатюры
         try:
             if path.stat().st_mtime < limit:
                 path.unlink()

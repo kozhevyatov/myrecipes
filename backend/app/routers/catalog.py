@@ -130,12 +130,14 @@ def products_catalog(db: Session = Depends(get_db), _: User = Depends(get_curren
 
 @router.patch("/products/{product_id}", response_model=ProductOut)
 def update_product(
-    product_id: int, data: ProductUpdate, db: Session = Depends(get_db), _: User = Depends(get_current_user)
+    product_id: int, data: ProductUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)
 ) -> ProductOut:
     p = db.get(Product, product_id)
     if not p:
         raise HTTPException(404, "Продукт не найден")
     fields = data.model_dump(exclude_unset=True)
+    if "name" in fields and not user.is_admin:
+        raise HTTPException(403, "Переименовать продукт может администратор")
     if "name" in fields:
         name = " ".join(fields.pop("name").split())
         clash = db.scalar(select(Product).where(func.lower(Product.name) == name.lower(), Product.id != p.id))

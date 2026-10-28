@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
+from .. import ratelimit
 from ..app_settings import get_setting
 from ..config import settings
 from ..db import get_db
@@ -52,11 +53,15 @@ def _tokens(user: User, request: Request, response: Response, remember: bool = T
 @router.post("/login", response_model=TokenOut)
 def login(data: LoginIn, request: Request, response: Response, db: Session = Depends(get_db)) -> TokenOut:
     login_value = data.login.strip()
+    ip = request.client.host if request.client else "?"
+    ratelimit.check(login_value, ip)
     user = db.scalar(
         select(User).where(or_(User.username == login_value, User.email == login_value.lower()))
     )
     if not user or not verify_password(data.password, user.password_hash):
+        ratelimit.fail(login_value, ip)
         raise HTTPException(401, "Неверный логин или пароль")
+    ratelimit.success(login_value)
     if not user.is_active:
         raise HTTPException(403, "Учётная запись отключена")
     return _tokens(user, request, response, data.remember)

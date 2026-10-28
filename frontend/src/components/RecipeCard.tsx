@@ -23,7 +23,7 @@ export function RecipeCard({ recipe }: { recipe: RecipeListItem }) {
     >
       <div className="relative aspect-[4/3] overflow-hidden bg-muted">
         <RecipeImage
-          src={recipe.image_url}
+          src={recipe.thumb_url ?? recipe.image_url}
           alt={recipe.title}
           className="transition-transform duration-700 ease-out group-hover:scale-[1.04]"
         />

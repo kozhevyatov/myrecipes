@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, Response, 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from .. import ratelimit
 from ..db import get_db
 from ..images import MAX_UPLOAD_BYTES, delete_image, save_avatar_bytes
 from ..models import User
@@ -44,7 +45,10 @@ def change_password(
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> TokenOut:
+    ip = request.client.host if request.client else "?"
+    ratelimit.check(user.username, ip)
     if not verify_password(data.current_password, user.password_hash):
+        ratelimit.fail(user.username, ip)
         raise HTTPException(400, "Текущий пароль указан неверно")
     user.password_hash = hash_password(data.new_password)
     user.token_version += 1  # остальные устройства выходят

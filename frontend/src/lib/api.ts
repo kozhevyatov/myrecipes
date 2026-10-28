@@ -65,6 +65,7 @@ export type RecipeListItem = {
   title: string;
   description: string;
   image_url: string | null;
+  thumb_url: string | null;
   category: CategoryRef | null;
   tags: string[];
   servings: number;

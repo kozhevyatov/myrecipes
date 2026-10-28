@@ -100,5 +100,19 @@ def get_db() -> Iterator[Session]:
 
 
 def startup() -> None:
-    if settings.database_url:
-        init_db(settings.database_url)
+    if not settings.database_url:
+        return
+    import logging
+    import time
+
+    from sqlalchemy.exc import OperationalError
+
+    log = logging.getLogger("uvicorn.error")
+    for attempt in range(1, 31):
+        try:
+            init_db(settings.database_url)
+            return
+        except OperationalError as exc:  # БД ещё не готова — ждём, а не падаем в цикл перезапусков
+            log.warning("База данных недоступна (попытка %s/30): %s", attempt, str(exc.orig)[:200])
+            time.sleep(min(2 * attempt, 10))
+    init_db(settings.database_url)

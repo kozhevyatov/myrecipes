@@ -124,6 +124,8 @@ def import_recipes(
             raise HTTPException(400, "Это не zip-архив")
         with zf:
             try:
+                if zf.getinfo("recipes.json").file_size > 100 * 1024 * 1024:
+                    raise HTTPException(413, "recipes.json больше 100 МБ")
                 manifest = json.loads(zf.read("recipes.json").decode("utf-8"))
             except (KeyError, UnicodeDecodeError, json.JSONDecodeError):
                 raise HTTPException(400, "В архиве нет recipes.json — это не резервная копия «Моих рецептов»")
