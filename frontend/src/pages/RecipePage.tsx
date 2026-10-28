@@ -120,7 +120,7 @@ export default function RecipePage() {
       setLastList(target!.id);
       queryClient.setQueryData(["shopping", target!.id], r.items);
       queryClient.invalidateQueries({ queryKey: ["shopping-lists"] });
-      const parts = [];
+      const parts: string[] = [];
       if (r.added) parts.push(`добавлено ${r.added}`);
       if (r.merged) parts.push(`сложено с уже имеющимися ${r.merged}`);
       toast.success(lists.length > 1 ? `В списке «${target!.name}»` : "В списке покупок", {

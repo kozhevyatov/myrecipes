@@ -1,7 +1,7 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Copy, Loader2, LogOut, Pencil, Plus, ShoppingBasket, Trash2, UserPlus, Users, X } from "lucide-react";
+import { Check, CloudOff, Copy, Loader2, LogOut, Pencil, Plus, ShoppingBasket, Trash2, UserPlus, Users, X } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { api, type ShoppingItem, type ShoppingList } from "@/lib/api";
 import { formatAmount } from "@/lib/format";
 import { getLastList, setLastList } from "@/lib/shoppingList";
+import { enqueue, onFlushed, overlay, pendingCount, tempId, useQueueVersion } from "@/lib/shoppingQueue";
 import { cn } from "@/lib/utils";
 
 // Общий список обновляется у всех: раз в несколько секунд, пока страница открыта
@@ -116,7 +117,7 @@ function Row({
   onToggle,
   onRemove,
 }: {
-  item: ShoppingItem;
+  item: ShoppingItem & { pending?: boolean };
   onToggle: (i: ShoppingItem) => void;
   onRemove: (id: number) => void;
 }) {
@@ -134,6 +135,7 @@ function Row({
         <span className="min-w-0 flex-1">
           <span className={cn("block text-[15px] font-medium", item.checked && "text-muted-foreground line-through")}>{item.name}</span>
           {item.note && <span className="block truncate text-xs text-muted-foreground">{item.note}</span>}
+          {item.pending && <span className="block text-xs text-muted-foreground">ждёт отправки</span>}
         </span>
         <span className={cn("shrink-0 text-[15px] font-semibold tabular-nums", item.checked && "text-muted-foreground")}>
           {amountText(item)}
@@ -177,41 +179,28 @@ export default function ShoppingPage() {
   });
 
   const refreshLists = () => queryClient.invalidateQueries({ queryKey: ["shopping-lists"] });
-  const setItems = (data: ShoppingItem[]) => {
-    queryClient.setQueryData(KEY, data);
-    refreshLists();
-  };
 
-  const add = useMutation({
-    mutationFn: (t: string) => api.shopping.addText(listId!, t),
-    onSuccess: (data) => {
-      setItems(data);
-      setText("");
-    },
-    onError: (e) => toast.error(e.message),
-  });
-  const toggle = useMutation({
-    mutationFn: (item: ShoppingItem) => api.shopping.update(item.id, { checked: !item.checked }),
-    onMutate: (item) => {
-      // Мгновенная реакция: в магазине ждать сервер некогда
-      queryClient.setQueryData<ShoppingItem[]>(KEY, (l) => l?.map((x) => (x.id === item.id ? { ...x, checked: !x.checked } : x)));
-    },
-    onSettled: refreshLists,
-    onError: (e) => {
-      toast.error(e.message);
-      queryClient.invalidateQueries({ queryKey: KEY });
-    },
-  });
-  const remove = useMutation({
-    mutationFn: (id: number) => api.shopping.remove(id),
-    onMutate: (id) => queryClient.setQueryData<ShoppingItem[]>(KEY, (l) => l?.filter((x) => x.id !== id)),
-    onSettled: refreshLists,
-  });
-  const clear = useMutation({
-    mutationFn: (checkedOnly: boolean) => api.shopping.clear(listId!, checkedOnly),
-    onSuccess: setItems,
-    onError: (e) => toast.error(e.message),
-  });
+  // Все изменения пунктов идут через очередь: сразу видны на экране, а на сервер уходят,
+  // как только есть связь. В магазине с плохим интернетом ничего не теряется.
+  const queueVersion = useQueueVersion();
+  useEffect(
+    () =>
+      onFlushed(() => {
+        queryClient.invalidateQueries({ queryKey: ["shopping"] });
+        refreshLists();
+      }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+  const addItem = (t: string) => {
+    enqueue({ kind: "add", listId: listId!, tempId: tempId(), text: t });
+    setText("");
+  };
+  const toggleItem = (item: ShoppingItem) =>
+    enqueue({ kind: "check", listId: listId!, itemId: item.id, checked: !item.checked });
+  const removeItem = (id: number) => enqueue({ kind: "remove", listId: listId!, itemId: id });
+  const clearItems = (checkedOnly: boolean) => enqueue({ kind: "clear", listId: listId!, checkedOnly });
+
   const createList = useMutation({
     mutationFn: (name: string) => api.shopping.createList(name),
     onSuccess: (l) => {
@@ -238,7 +227,9 @@ export default function ShoppingPage() {
     onError: (e) => toast.error(e.message),
   });
 
-  const data = items.data ?? [];
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const data = useMemo(() => (listId ? overlay(listId, items.data ?? []) : []), [listId, items.data, queueVersion]);
+  const pending = listId ? pendingCount(listId) : 0;
   const todo = data.filter((i) => !i.checked);
   const done = data.filter((i) => i.checked);
   const people = active ? [active.owner, ...active.members] : [];
@@ -256,7 +247,7 @@ export default function ShoppingPage() {
 
   const submit = (e: FormEvent) => {
     e.preventDefault();
-    if (text.trim() && listId) add.mutate(text.trim());
+    if (text.trim() && listId) addItem(text.trim());
   };
 
   return (
@@ -373,7 +364,16 @@ export default function ShoppingPage() {
               )}
             </div>
           </div>
-          {!active.is_owner && <p className="-mt-4 text-sm text-muted-foreground">Список {active.owner.name}</p>}
+          {(!active.is_owner || pending > 0) && (
+            <p className="-mt-4 flex flex-wrap items-center gap-x-3 text-sm text-muted-foreground">
+              {!active.is_owner && <span>Список {active.owner.name}</span>}
+              {pending > 0 && (
+                <span className="flex items-center gap-1.5 text-highlight-foreground">
+                  <CloudOff className="size-3.5" /> Не отправлено: {pending} — уйдёт, когда появится связь
+                </span>
+              )}
+            </p>
+          )}
 
           <form onSubmit={submit} className="flex gap-2">
             <Input
@@ -383,8 +383,8 @@ export default function ShoppingPage() {
               onChange={(e) => setText(e.target.value)}
               enterKeyHint="done"
             />
-            <Button type="submit" size="icon" className="size-12 shrink-0" disabled={!text.trim() || add.isPending} aria-label="Добавить">
-              {add.isPending ? <Loader2 className="animate-spin" /> : <Plus />}
+            <Button type="submit" size="icon" className="size-12 shrink-0" disabled={!text.trim()} aria-label="Добавить">
+              <Plus />
             </Button>
           </form>
         </>
@@ -412,7 +412,7 @@ export default function ShoppingPage() {
           {todo.length > 0 ? (
             <ul className="overflow-hidden rounded-3xl border bg-card">
               {todo.map((i) => (
-                <Row key={i.id} item={i} onToggle={(x) => toggle.mutate(x)} onRemove={(id) => remove.mutate(id)} />
+                <Row key={i.id} item={i} onToggle={toggleItem} onRemove={removeItem} />
               ))}
             </ul>
           ) : (
@@ -423,13 +423,13 @@ export default function ShoppingPage() {
             <section className="grid gap-3">
               <div className="flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-muted-foreground">Куплено: {done.length}</h2>
-                <Button variant="ghost" size="sm" onClick={() => clear.mutate(true)} disabled={clear.isPending}>
+                <Button variant="ghost" size="sm" onClick={() => clearItems(true)}>
                   <Trash2 /> Очистить купленное
                 </Button>
               </div>
               <ul className="overflow-hidden rounded-3xl border bg-card/60">
                 {done.map((i) => (
-                  <Row key={i.id} item={i} onToggle={(x) => toggle.mutate(x)} onRemove={(id) => remove.mutate(id)} />
+                  <Row key={i.id} item={i} onToggle={toggleItem} onRemove={removeItem} />
                 ))}
               </ul>
             </section>
@@ -440,7 +440,7 @@ export default function ShoppingPage() {
               variant="ghost"
               size="sm"
               className="text-muted-foreground hover:text-destructive"
-              onClick={() => confirm("Убрать все пункты из этого списка?") && clear.mutate(false)}
+              onClick={() => confirm("Убрать все пункты из этого списка?") && clearItems(false)}
             >
               Очистить список
             </Button>

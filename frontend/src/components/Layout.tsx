@@ -8,6 +8,7 @@ import { Brand } from "@/components/Logo";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { syncFavoritesOffline, useOnline } from "@/lib/offline";
+import { flush as flushShopping } from "@/lib/shoppingQueue";
 import { useSettings } from "@/lib/useSettings";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -36,7 +37,9 @@ export function Layout() {
 
   // Избранное — на устройство, чтобы открывалось без интернета
   useEffect(() => {
-    if (user && online) syncFavoritesOffline();
+    if (!user || !online) return;
+    // Сначала отправить то, что накопилось без связи, потом обновить сохранённое
+    flushShopping().finally(() => syncFavoritesOffline());
   }, [user, online]);
   const shopping = useQuery({ queryKey: ["shopping-lists"], queryFn: api.shopping.lists, enabled: Boolean(user) });
   const toBuy = shopping.data?.reduce((n, l) => n + l.todo, 0) ?? 0;

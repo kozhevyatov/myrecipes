@@ -5,6 +5,7 @@
  */
 import { useEffect, useState } from "react";
 import { api } from "./api";
+import { clearQueue } from "./shoppingQueue";
 
 const IDS_KEY = "offline-recipes";
 const SYNC_KEY = "offline-synced-at";
@@ -62,6 +63,13 @@ export async function syncFavoritesOffline(force = false) {
     const fav = await api.recipes.list({ favorites: true, limit: 100 });
     // Справочники для фильтров на главной
     await Promise.all([api.catalog.categories(), api.catalog.tags(), api.settings.get()].map((p) => p.catch(() => undefined)));
+    // Списки покупок — свои и общие, со всеми пунктами
+    try {
+      const lists = await api.shopping.lists();
+      await Promise.all(lists.map((l) => api.shopping.items(l.id).catch(() => undefined)));
+    } catch {
+      /* ignore */
+    }
     const ids = new Set<number>();
     for (const item of fav.items) {
       await saveRecipeOffline(item.id);
@@ -78,6 +86,7 @@ export async function clearOfflineData() {
   try {
     localStorage.removeItem(IDS_KEY);
     localStorage.removeItem(SYNC_KEY);
+    clearQueue();
   } catch {
     /* ignore */
   }
