@@ -31,6 +31,7 @@ import { Tag } from "@/components/ui/chip";
 import { Switch } from "@/components/ui/switch";
 import { ApiError, api, type Ingredient } from "@/lib/api";
 import { DIFFICULTY, formatAmount, formatMinutes, plural } from "@/lib/format";
+import { useOfflineIds } from "@/lib/offline";
 import { getLastList, setLastList } from "@/lib/shoppingList";
 import { useWakeLock } from "@/lib/useWakeLock";
 import { cn } from "@/lib/utils";
@@ -103,6 +104,7 @@ export default function RecipePage() {
   });
 
   const groups = useMemo(() => groupIngredients(recipe?.ingredients ?? []), [recipe]);
+  const offlineIds = useOfflineIds();
 
   // Отмеченные галочкой ингредиенты считаем «уже есть дома» и в покупки не добавляем
   const shoppingLists = useQuery({ queryKey: ["shopping-lists"], queryFn: api.shopping.lists });
@@ -240,6 +242,11 @@ export default function RecipePage() {
                   <ChefHat /> Начать готовить
                 </Link>
               </Button>
+            )}
+            {recipe.is_favorite && offlineIds.has(recipe.id) && (
+              <span className="flex items-center gap-1.5 text-sm text-muted-foreground print:hidden" title="Откроется без интернета">
+                <Check className="size-4 text-success" /> на устройстве
+              </span>
             )}
             {recipe.source_url && (
               <a

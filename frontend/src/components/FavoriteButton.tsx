@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Heart } from "lucide-react";
 import { toast } from "sonner";
 import { api } from "@/lib/api";
+import { saveRecipeOffline } from "@/lib/offline";
 import { cn } from "@/lib/utils";
 
 /** Сердечко «в избранное». Переключается сразу, сервер — в фоне. */
@@ -27,6 +28,10 @@ export function FavoriteButton({
     setOn(next);
     try {
       await api.recipes.setFavorite(recipeId, next);
+      if (next) {
+        saveRecipeOffline(recipeId);
+        toast.success("В избранном", { description: "Рецепт сохранён на устройство и откроется без интернета" });
+      }
       queryClient.invalidateQueries({ queryKey: ["recipes"] });
       queryClient.invalidateQueries({ queryKey: ["recipe", recipeId] });
     } catch (err) {

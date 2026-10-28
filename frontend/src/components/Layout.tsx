@@ -1,12 +1,13 @@
 import { useEffect } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, Carrot, LogOut, Moon, Settings, ShoppingBasket, Sun } from "lucide-react";
+import { BookOpen, Carrot, CloudOff, LogOut, Moon, Settings, ShoppingBasket, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/Avatar";
 import { Brand } from "@/components/Logo";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { syncFavoritesOffline, useOnline } from "@/lib/offline";
 import { useSettings } from "@/lib/useSettings";
 import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
@@ -31,6 +32,12 @@ export function Layout() {
   const siteName = settings?.site_name ?? "Мои рецепты";
 
   const location = useLocation();
+  const online = useOnline();
+
+  // Избранное — на устройство, чтобы открывалось без интернета
+  useEffect(() => {
+    if (user && online) syncFavoritesOffline();
+  }, [user, online]);
   const shopping = useQuery({ queryKey: ["shopping-lists"], queryFn: api.shopping.lists, enabled: Boolean(user) });
   const toBuy = shopping.data?.reduce((n, l) => n + l.todo, 0) ?? 0;
   const nav = [
@@ -94,6 +101,12 @@ export function Layout() {
           </div>
         </div>
       </header>
+
+      {!online && (
+        <div className="sticky top-16 z-20 flex items-center justify-center gap-2 bg-highlight px-4 py-2 text-center text-sm font-medium text-highlight-foreground print:hidden">
+          <CloudOff className="size-4 shrink-0" /> Нет связи — открываются избранные рецепты и списки покупок, изменения недоступны
+        </div>
+      )}
 
       <main className="mx-auto max-w-6xl px-4 py-8 pb-28 sm:px-6 sm:py-10 sm:pb-12 print:p-0">
         <Outlet />

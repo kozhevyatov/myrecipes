@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { plural } from "@/lib/format";
+import { useOnline } from "@/lib/offline";
 
 const PAGE = 24;
 
@@ -62,13 +63,15 @@ export default function HomePage() {
   const total = recipes.data?.pages[0]?.total ?? 0;
   const filtered = Boolean(q || categoryId || tag || mine || favorites);
   const name = user?.display_name || user?.username;
+  const online = useOnline();
 
   return (
     <div className="grid gap-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="title-display text-4xl sm:text-5xl">Рецепты</h1>
-          {!filtered && total > 0 && (
+          {!online && <p className="mt-2 text-muted-foreground">Без связи — показываем избранное, сохранённое на устройстве</p>}
+          {online && !filtered && total > 0 && (
             <p className="mt-2 text-muted-foreground">
               {name}, в книге {total} {plural(total, "рецепт", "рецепта", "рецептов")}
             </p>

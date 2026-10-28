@@ -181,13 +181,36 @@ export function onAuthChange(fn: (user: User | null) => void) {
   return () => listeners.delete(fn);
 }
 
+// Профиль последнего вошедшего — чтобы без интернета не выкидывало на вход
+const OFFLINE_USER = "offline-user";
+
+function rememberUser(user: User | null) {
+  try {
+    if (user) localStorage.setItem(OFFLINE_USER, JSON.stringify(user));
+    else localStorage.removeItem(OFFLINE_USER);
+  } catch {
+    /* приватный режим */
+  }
+}
+
+function rememberedUser(): User | null {
+  try {
+    const raw = localStorage.getItem(OFFLINE_USER);
+    return raw ? (JSON.parse(raw) as User) : null;
+  } catch {
+    return null;
+  }
+}
+
 export function setSession(data: TokenResponse | null) {
   accessToken = data?.access_token ?? null;
+  rememberUser(data?.user ?? null);
   listeners.forEach((fn) => fn(data?.user ?? null));
 }
 
 /** Обновить данные текущего пользователя (имя, аватар) без перевыпуска токенов. */
 export function updateCurrentUser(user: User) {
+  rememberUser(user);
   listeners.forEach((fn) => fn(user));
 }
 
@@ -227,8 +250,14 @@ export async function refreshSession(): Promise<TokenResponse | null> {
         setSession(data);
         return data;
       })
-      .catch(() => {
-        setSession(null);
+      .catch((err) => {
+        // Нет сети (а не «сессия истекла») — остаёмся в аккаунте, данные покажет кэш
+        const offline = !(err instanceof ApiError) && rememberedUser();
+        if (offline) {
+          listeners.forEach((fn) => fn(offline));
+        } else {
+          setSession(null);
+        }
         return null;
       })
       .finally(() => {

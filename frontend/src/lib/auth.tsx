@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from "react";
 import { api, onAuthChange, refreshSession, setSession, type User } from "./api";
+import { clearOfflineData } from "./offline";
 
 type AuthState = {
   user: User | null;
@@ -27,6 +28,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await api.auth.logout();
     } finally {
       setSession(null);
+      await clearOfflineData();
     }
   };
 

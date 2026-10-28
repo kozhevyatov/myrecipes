@@ -10,7 +10,11 @@ import "@fontsource-variable/unbounded";
 import "./index.css";
 
 const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: 1, refetchOnWindowFocus: false } },
+  defaultOptions: {
+    // «always»: запросы идут даже без сети — их перехватит service worker и отдаст сохранённую копию
+    queries: { retry: 1, refetchOnWindowFocus: false, networkMode: "always" },
+    mutations: { networkMode: "always" },
+  },
 });
 
 createRoot(document.getElementById("root")!).render(
