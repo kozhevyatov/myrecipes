@@ -85,6 +85,18 @@ class SettingsUpdate(BaseModel):
     registration_mode: Literal["open", "closed"] | None = None
 
 
+class UserAdminCreate(BaseModel):
+    username: str = Field(pattern=USERNAME_PATTERN)
+    email: str = Field(pattern=EMAIL_PATTERN, max_length=255)
+    display_name: str = Field(default="", max_length=128)
+    password: str = Field(min_length=8, max_length=128)
+    is_admin: bool = False
+
+
+class PasswordReset(BaseModel):
+    password: str = Field(min_length=8, max_length=128)
+
+
 class UserAdminUpdate(BaseModel):
     is_admin: bool | None = None
     is_active: bool | None = None

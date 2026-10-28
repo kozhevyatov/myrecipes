@@ -199,6 +199,31 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   }
 }
 
+/** Скачивание файла с авторизацией (обычная ссылка не передаёт Bearer-токен). */
+async function downloadFile(path: string, fallbackName: string): Promise<void> {
+  const attempt = () =>
+    fetch(path, {
+      credentials: "include",
+      headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : {},
+    });
+  let res = await attempt();
+  if (res.status === 401 && (await refreshSession())) res = await attempt();
+  if (!res.ok) throw new ApiError(res.status, `Ошибка ${res.status}`);
+  const disposition = res.headers.get("Content-Disposition") ?? "";
+  const match = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition);
+  const name = match ? decodeURIComponent(match[1]) : fallbackName;
+  const url = URL.createObjectURL(await res.blob());
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = name;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+export type RestoreResult = { created: number; skipped: number; failed: number; errors: string[] };
+
 const json = (data: unknown) => JSON.stringify(data);
 
 function setupHeaders(token?: string): HeadersInit {
@@ -277,8 +302,24 @@ export const api = {
     products: () => request<string[]>("/api/products"),
   },
 
+  backup: {
+    download: () => downloadFile("/api/backup/export", "recipes.zip"),
+    restore: (file: File, skipDuplicates = true) => {
+      const form = new FormData();
+      form.append("file", file);
+      return request<RestoreResult>(`/api/backup/import?skip_duplicates=${skipDuplicates}`, {
+        method: "POST",
+        body: form,
+      });
+    },
+  },
+
   admin: {
     users: () => request<User[]>("/api/admin/users"),
+    createUser: (data: { username: string; email: string; display_name: string; password: string; is_admin: boolean }) =>
+      request<User>("/api/admin/users", { method: "POST", body: json(data) }),
+    resetPassword: (id: number, password: string) =>
+      request<{ ok: true }>(`/api/admin/users/${id}/password`, { method: "POST", body: json({ password }) }),
     updateUser: (id: number, data: { is_admin?: boolean; is_active?: boolean }) =>
       request<User>(`/api/admin/users/${id}`, { method: "PATCH", body: json(data) }),
   },

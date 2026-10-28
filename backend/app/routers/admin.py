@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from ..app_settings import public_settings, set_setting
 from ..db import get_db
 from ..models import User
-from ..schemas import PublicSettings, SettingsUpdate, UserAdminUpdate, UserOut
-from ..security import require_admin
+from ..schemas import PasswordReset, PublicSettings, SettingsUpdate, UserAdminCreate, UserAdminUpdate, UserOut
+from ..security import hash_password, require_admin
 
 router = APIRouter(prefix="/api", tags=["settings"])
 
@@ -57,3 +57,38 @@ def update_user(
     db.commit()
     db.refresh(user)
     return user
+
+
+@router.post("/admin/users", response_model=UserOut)
+def create_user(data: UserAdminCreate, db: Session = Depends(get_db), _: User = Depends(require_admin)) -> User:
+    """Админ добавляет пользователя сам — работает и при закрытой регистрации."""
+    email = data.email.lower()
+    exists = db.scalar(
+        select(func.count()).select_from(User).where(or_(User.username == data.username, User.email == email))
+    )
+    if exists:
+        raise HTTPException(409, "Пользователь с таким логином или email уже есть")
+    user = User(
+        username=data.username,
+        email=email,
+        display_name=data.display_name or data.username,
+        password_hash=hash_password(data.password),
+        is_admin=data.is_admin,
+    )
+    db.add(user)
+    db.commit()
+    db.refresh(user)
+    return user
+
+
+@router.post("/admin/users/{user_id}/password")
+def reset_password(
+    user_id: int, data: PasswordReset, db: Session = Depends(get_db), _: User = Depends(require_admin)
+) -> dict:
+    user = db.get(User, user_id)
+    if not user:
+        raise HTTPException(404, "Пользователь не найден")
+    user.password_hash = hash_password(data.password)
+    user.token_version += 1  # выкидывает со всех устройств
+    db.commit()
+    return {"ok": True}

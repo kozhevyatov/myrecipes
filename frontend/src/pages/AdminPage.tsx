@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ChangeEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Loader2, Pencil, Plus, Shield, Trash2, UserRound, X } from "lucide-react";
+import { Check, Download, KeyRound, Loader2, Pencil, Plus, Shield, Trash2, Upload, UserPlus, UserRound, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -197,10 +197,181 @@ function CategoriesCard() {
   );
 }
 
+function BackupCard() {
+  const { user } = useAuth();
+  const queryClient = useQueryClient();
+  const input = useRef<HTMLInputElement>(null);
+  const [downloading, setDownloading] = useState(false);
+  const restore = useMutation({
+    mutationFn: (file: File) => api.backup.restore(file),
+    onSuccess: (r) => {
+      queryClient.invalidateQueries();
+      const parts = [`добавлено ${r.created}`];
+      if (r.skipped) parts.push(`пропущено повторов ${r.skipped}`);
+      if (r.failed) parts.push(`с ошибкой ${r.failed}`);
+      (r.failed ? toast.warning : toast.success)(`Восстановление: ${parts.join(", ")}`, {
+        description: r.errors.slice(0, 3).join("\n") || undefined,
+        duration: 10000,
+      });
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle>Резервная копия</CardTitle>
+        <CardDescription>
+          {user?.is_admin ? "Все рецепты" : "Ваши рецепты"} с фото в одном zip-архиве. Из него же можно восстановить
+          рецепты или перенести их на другой сервер. Повторы (то же название у того же автора) пропускаются.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-wrap gap-3">
+        <Button
+          variant="secondary"
+          disabled={downloading}
+          onClick={async () => {
+            setDownloading(true);
+            try {
+              await api.backup.download();
+            } catch (e) {
+              toast.error((e as Error).message);
+            } finally {
+              setDownloading(false);
+            }
+          }}
+        >
+          {downloading ? <Loader2 className="animate-spin" /> : <Download />} Скачать архив
+        </Button>
+        <Button variant="outline" disabled={restore.isPending} onClick={() => input.current?.click()}>
+          {restore.isPending ? <Loader2 className="animate-spin" /> : <Upload />} Восстановить из архива
+        </Button>
+        <input
+          ref={input}
+          type="file"
+          accept=".zip,application/zip"
+          hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file) restore.mutate(file);
+            e.target.value = "";
+          }}
+        />
+      </CardContent>
+    </Card>
+  );
+}
+
+function AddUserForm({ onDone }: { onDone: () => void }) {
+  const queryClient = useQueryClient();
+  const [form, setForm] = useState({ username: "", display_name: "", email: "", password: "", is_admin: false });
+  const create = useMutation({
+    mutationFn: () => api.admin.createUser(form),
+    onSuccess: (user) => {
+      queryClient.setQueryData<User[]>(["admin-users"], (list) => (list ? [...list, user] : [user]));
+      toast.success(`Пользователь ${user.username} добавлен`, {
+        description: "Передайте ему логин и пароль — сменить пароль можно здесь же.",
+      });
+      onDone();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  const set = (k: "username" | "display_name" | "email" | "password") => (e: ChangeEvent<HTMLInputElement>) =>
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+
+  return (
+    <form
+      className="grid gap-4 border-b bg-muted/40 px-6 py-5"
+      onSubmit={(e) => {
+        e.preventDefault();
+        create.mutate();
+      }}
+    >
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field id="nu-username" label="Логин" hint="Латиница, цифры, _ . -">
+          <Input id="nu-username" required autoComplete="off" value={form.username} onChange={set("username")} />
+        </Field>
+        <Field id="nu-name" label="Имя">
+          <Input id="nu-name" autoComplete="off" value={form.display_name} onChange={set("display_name")} />
+        </Field>
+        <Field id="nu-email" label="Email">
+          <Input id="nu-email" type="email" required autoComplete="off" value={form.email} onChange={set("email")} />
+        </Field>
+        <Field id="nu-password" label="Пароль" hint="Минимум 8 символов">
+          <Input
+            id="nu-password"
+            type="text"
+            required
+            minLength={8}
+            autoComplete="new-password"
+            value={form.password}
+            onChange={set("password")}
+          />
+        </Field>
+      </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <label className="flex items-center gap-2 text-sm font-semibold">
+          <Switch checked={form.is_admin} onCheckedChange={(v) => setForm((f) => ({ ...f, is_admin: v }))} />
+          Администратор
+        </label>
+        <div className="flex gap-2">
+          <Button type="button" variant="ghost" onClick={onDone}>
+            Отмена
+          </Button>
+          <Button type="submit" disabled={create.isPending}>
+            {create.isPending && <Loader2 className="animate-spin" />} Добавить
+          </Button>
+        </div>
+      </div>
+    </form>
+  );
+}
+
+function ResetPassword({ user, onDone }: { user: User; onDone: () => void }) {
+  const [password, setPassword] = useState("");
+  const reset = useMutation({
+    mutationFn: () => api.admin.resetPassword(user.id, password),
+    onSuccess: () => {
+      toast.success(`Пароль для ${user.username} изменён`, { description: "Пользователь вышел со всех устройств." });
+      onDone();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+  return (
+    <form
+      className="flex w-full flex-wrap items-center gap-2 pl-14"
+      onSubmit={(e) => {
+        e.preventDefault();
+        reset.mutate();
+      }}
+    >
+      <Input
+        autoFocus
+        type="text"
+        minLength={8}
+        required
+        placeholder="Новый пароль, от 8 символов"
+        className="h-9 max-w-xs flex-1"
+        autoComplete="new-password"
+        value={password}
+        onChange={(e) => setPassword(e.target.value)}
+      />
+      <Button type="submit" size="sm" disabled={reset.isPending}>
+        Сохранить
+      </Button>
+      <Button type="button" size="sm" variant="ghost" onClick={onDone}>
+        Отмена
+      </Button>
+    </form>
+  );
+}
+
 function UsersCard() {
   const { user: me } = useAuth();
   const queryClient = useQueryClient();
   const users = useQuery({ queryKey: ["admin-users"], queryFn: api.admin.users });
+  const [adding, setAdding] = useState(false);
+  const [resetFor, setResetFor] = useState<number | null>(null);
 
   const mutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: { is_admin?: boolean; is_active?: boolean } }) =>
@@ -213,10 +384,20 @@ function UsersCard() {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Пользователи</CardTitle>
-        <CardDescription>Права администратора и блокировка.</CardDescription>
+        <div className="flex items-start justify-between gap-3">
+          <div className="grid gap-1.5">
+            <CardTitle>Пользователи</CardTitle>
+            <CardDescription>Добавление работает и при закрытой регистрации.</CardDescription>
+          </div>
+          {!adding && (
+            <Button size="sm" variant="secondary" onClick={() => setAdding(true)}>
+              <UserPlus /> Добавить
+            </Button>
+          )}
+        </div>
       </CardHeader>
       <CardContent className="p-0 pt-4">
+        {adding && <AddUserForm onDone={() => setAdding(false)} />}
         {users.isLoading ? (
           <div className="flex justify-center p-8">
             <Loader2 className="size-5 animate-spin text-muted-foreground" />
@@ -237,6 +418,15 @@ function UsersCard() {
                     @{u.username} · {u.email}
                   </span>
                 </span>
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  aria-label="Сменить пароль"
+                  title="Сменить пароль"
+                  onClick={() => setResetFor(resetFor === u.id ? null : u.id)}
+                >
+                  <KeyRound />
+                </Button>
                 <label className="flex items-center gap-2 text-sm">
                   Админ
                   <Switch
@@ -253,6 +443,7 @@ function UsersCard() {
                     onCheckedChange={(v) => mutation.mutate({ id: u.id, data: { is_active: v } })}
                   />
                 </label>
+                {resetFor === u.id && <ResetPassword user={u} onDone={() => setResetFor(null)} />}
               </li>
             ))}
           </ul>
@@ -270,6 +461,7 @@ export default function AdminPage() {
         <div className="grid content-start gap-6">
           <SettingsCard />
           <CategoriesCard />
+          <BackupCard />
         </div>
         <UsersCard />
       </div>
