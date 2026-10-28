@@ -177,7 +177,7 @@ export default function HomePage() {
               Найдено {total} {plural(total, "рецепт", "рецепта", "рецептов")}
             </p>
           )}
-          <div className="grid gap-x-5 gap-y-8 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
             {items.map((r) => (
               <RecipeCard key={r.id} recipe={r} />
             ))}

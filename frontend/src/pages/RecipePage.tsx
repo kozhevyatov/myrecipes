@@ -155,7 +155,7 @@ export default function RecipePage() {
 
       {/* Шапка */}
       <header className="grid gap-8 md:grid-cols-[1.15fr_1fr] md:items-center">
-        <div className="aspect-[4/3] overflow-hidden rounded-3xl bg-muted">
+        <div className="aspect-[4/3] overflow-hidden rounded-3xl border bg-muted">
           <RecipeImage src={recipe.image_url} alt={recipe.title} />
         </div>
         <div className="grid gap-5">
@@ -232,7 +232,7 @@ export default function RecipePage() {
         {/* Ингредиенты */}
         <section className="grid gap-4 lg:sticky lg:top-24">
           <KeepScreenOn />
-          <div className="rounded-3xl bg-card p-5 ring-1 ring-border sm:p-6">
+          <div className="rounded-3xl border bg-card p-5 sm:p-6">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-xl font-semibold">Ингредиенты</h2>
               <div className="flex items-center gap-1 rounded-full bg-muted p-1">
@@ -323,7 +323,7 @@ export default function RecipePage() {
           {recipe.steps.length === 0 ? (
             <p className="mt-4 text-sm text-muted-foreground">Шаги не описаны.</p>
           ) : (
-            <ol className="mt-2 grid">
+            <ol className="mt-4 grid gap-3">
               {recipe.steps.map((step, i) => {
                 const key = step.id ?? i;
                 const done = doneSteps.has(key);
@@ -331,7 +331,7 @@ export default function RecipePage() {
                   <li
                     key={key}
                     className={cn(
-                      "flex gap-4 border-b py-5 transition-opacity last:border-b-0",
+                      "flex gap-4 rounded-2xl border bg-card p-4 transition-opacity sm:p-5",
                       done && "opacity-55",
                     )}
                   >

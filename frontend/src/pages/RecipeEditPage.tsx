@@ -164,7 +164,7 @@ function move<T>(list: T[], from: number, to: number): T[] {
 // ---------- мелкие компоненты ----------
 function Section({ title, hint, children, action }: { title: string; hint?: string; children: ReactNode; action?: ReactNode }) {
   return (
-    <section className="rounded-3xl bg-card p-5 ring-1 ring-border sm:p-7">
+    <section className="rounded-3xl border bg-card p-5 sm:p-7">
       <div className="mb-5 flex items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-semibold">{title}</h2>

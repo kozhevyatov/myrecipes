@@ -18,9 +18,9 @@ export function RecipeCard({ recipe }: { recipe: RecipeListItem }) {
   return (
     <Link
       to={`/recipes/${recipe.id}`}
-      className="group flex flex-col gap-3 rounded-2xl outline-none focus-visible:ring-4 focus-visible:ring-ring"
+      className="group flex flex-col overflow-hidden rounded-2xl border bg-card transition-[box-shadow,border-color] outline-none hover:border-foreground/15 hover:shadow-[0_8px_24px_-12px_rgb(0_0_0/0.18)] focus-visible:ring-4 focus-visible:ring-ring"
     >
-      <div className="relative aspect-[4/3] overflow-hidden rounded-2xl bg-muted">
+      <div className="relative aspect-[4/3] overflow-hidden bg-muted">
         <RecipeImage
           src={recipe.image_url}
           alt={recipe.title}
@@ -37,7 +37,7 @@ export function RecipeCard({ recipe }: { recipe: RecipeListItem }) {
           </span>
         )}
       </div>
-      <div className="flex flex-1 flex-col gap-1.5 px-1">
+      <div className="flex flex-1 flex-col gap-1.5 p-4">
         <h3 className="line-clamp-2 text-[16px] leading-snug font-semibold group-hover:text-primary">{recipe.title}</h3>
         {recipe.description && <p className="line-clamp-2 text-sm text-muted-foreground">{recipe.description}</p>}
         <div className="mt-auto flex flex-wrap items-center gap-x-3 gap-y-1.5 pt-0.5 text-xs text-muted-foreground">
