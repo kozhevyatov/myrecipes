@@ -128,6 +128,13 @@ export default function CookPage() {
             <p className="text-2xl leading-snug font-semibold whitespace-pre-line sm:text-3xl sm:leading-snug">
               {step.text}
             </p>
+            {step.image_url && (
+              <img
+                src={step.image_url}
+                alt=""
+                className="max-h-[40svh] w-full max-w-xl rounded-2xl border bg-muted object-cover"
+              />
+            )}
             {step.timer_minutes && (
               <div className="origin-left scale-125">
                 <StepTimer key={step.id ?? index} minutes={step.timer_minutes} label={`шаг ${index + 1}`} />

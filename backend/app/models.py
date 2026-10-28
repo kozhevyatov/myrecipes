@@ -110,6 +110,8 @@ class Recipe(Base):
     source_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
     # Публичный — виден всем пользователям сервиса; иначе только автору (и админу)
     is_public: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Ссылка для людей без аккаунта: /r/<token>. None — ссылка выключена
+    share_token: Mapped[str | None] = mapped_column(String(32), nullable=True, unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow)
 
@@ -128,6 +130,31 @@ class Recipe(Base):
         order_by="RecipeStep.position",
         lazy="selectin",
     )
+    # Дополнительные фото (галерея); главное фото — image
+    photos: Mapped[list[RecipePhoto]] = relationship(
+        back_populates="recipe",
+        cascade="all, delete-orphan",
+        order_by="RecipePhoto.position",
+        lazy="selectin",
+    )
+
+    def image_names(self) -> set[str]:
+        """Все файлы фото рецепта: обложка, галерея, шаги."""
+        names = {p.image for p in self.photos} | {s.image for s in self.steps if s.image}
+        if self.image:
+            names.add(self.image)
+        return names
+
+
+class RecipePhoto(Base):
+    __tablename__ = "recipe_photos"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    recipe_id: Mapped[int] = mapped_column(ForeignKey("recipes.id", ondelete="CASCADE"), index=True)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    image: Mapped[str] = mapped_column(String(64))
+
+    recipe: Mapped[Recipe] = relationship(back_populates="photos")
 
 
 class RecipeIngredient(Base):
@@ -155,6 +182,7 @@ class RecipeStep(Base):
     position: Mapped[int] = mapped_column(Integer, default=0)
     text: Mapped[str] = mapped_column(Text)
     timer_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    image: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     recipe: Mapped[Recipe] = relationship(back_populates="steps")
 
@@ -220,3 +248,46 @@ class CookLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     user: Mapped[User] = relationship(lazy="joined")
+
+
+# ---------------- меню и кладовка ----------------
+
+class MealPlanEntry(Base):
+    """Блюдо в меню: день, приём пищи, рецепт (или просто заметка) и число порций."""
+
+    __tablename__ = "meal_plan"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    # Чьё меню
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    day: Mapped[date] = mapped_column(Date, index=True)
+    # breakfast | lunch | dinner | snack
+    slot: Mapped[str] = mapped_column(String(16), default="dinner")
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    recipe_id: Mapped[int | None] = mapped_column(ForeignKey("recipes.id", ondelete="CASCADE"), nullable=True, index=True)
+    servings: Mapped[int] = mapped_column(Integer, default=2)
+    note: Mapped[str] = mapped_column(String(200), default="")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    recipe: Mapped[Recipe | None] = relationship(lazy="joined")
+
+
+class MealPlanMember(Base):
+    """Кому открыто меню: видит и может менять."""
+
+    __tablename__ = "meal_plan_members"
+
+    owner_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+
+
+class PantryItem(Base):
+    """Кладовка: что обычно есть дома."""
+
+    __tablename__ = "pantry"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+    product: Mapped[Product] = relationship(lazy="joined")

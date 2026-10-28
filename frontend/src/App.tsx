@@ -16,6 +16,9 @@ import CookPage from "@/pages/CookPage";
 import ProfilePage from "@/pages/ProfilePage";
 import ProductsPage from "@/pages/ProductsPage";
 import ShoppingPage from "@/pages/ShoppingPage";
+import PlanPage from "@/pages/PlanPage";
+import PantryPage from "@/pages/PantryPage";
+import SharedRecipePage from "@/pages/SharedRecipePage";
 
 function RequireAuth({ children, admin = false }: { children: ReactNode; admin?: boolean }) {
   const { user } = useAuth();
@@ -42,6 +45,7 @@ export default function App() {
       <Route path="/setup" element={setupDone ? <Navigate to="/" replace /> : <SetupPage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<RegisterPage />} />
+      <Route path="/r/:token" element={<SharedRecipePage />} />
       <Route
         path="/recipes/:id/cook"
         element={
@@ -88,6 +92,22 @@ export default function App() {
           element={
             <RequireAuth>
               <ShoppingPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/plan"
+          element={
+            <RequireAuth>
+              <PlanPage />
+            </RequireAuth>
+          }
+        />
+        <Route
+          path="/pantry"
+          element={
+            <RequireAuth>
+              <PantryPage />
             </RequireAuth>
           }
         />

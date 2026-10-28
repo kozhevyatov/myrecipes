@@ -126,6 +126,21 @@ def claim_import_image(token: str | None) -> str | None:
     return name
 
 
+_PHOTO_RE = re.compile(r"^[0-9a-f]{32}\.webp$")
+
+
+def resolve_photo(name: str | None, allowed: set[str]) -> str | None:
+    """Фото из формы редактора: временный токен загрузки → постоянный файл;
+    уже сохранённый файл принимаем, только если он и так принадлежал этому рецепту."""
+    if not name:
+        return None
+    if _IMPORT_RE.fullmatch(name):
+        return claim_import_image(name)
+    if _PHOTO_RE.fullmatch(name) and name in allowed and (UPLOAD_DIR / name).exists():
+        return name
+    return None
+
+
 def cleanup_import_images(max_age_hours: int = 24) -> None:
     """Удаляет временные фото импорта, которые так и не сохранили в рецепт."""
     if not UPLOAD_DIR.exists():

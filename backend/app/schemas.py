@@ -201,6 +201,8 @@ class IngredientIn(BaseModel):
 class StepIn(BaseModel):
     text: str = Field(min_length=1, max_length=10_000)
     timer_minutes: int | None = Field(default=None, ge=1, le=10_000)
+    # Фото шага: имя уже сохранённого файла этого рецепта или временный токен загрузки (imp-….webp)
+    image: str | None = Field(default=None, max_length=64)
 
 
 class RecipeIn(BaseModel):
@@ -218,10 +220,22 @@ class RecipeIn(BaseModel):
     tags: list[str] = Field(default_factory=list, max_length=30)
     ingredients: list[IngredientIn] = Field(default_factory=list, max_length=200)
     steps: list[StepIn] = Field(default_factory=list, max_length=200)
+    # Галерея: имена файлов/токены по порядку. None — не менять
+    photos: list[str] | None = Field(default=None, max_length=30)
 
 
 class ImportIn(BaseModel):
     url: str = Field(min_length=8, max_length=2000)
+
+
+class ImportTextIn(BaseModel):
+    text: str = Field(min_length=3, max_length=50_000)
+
+
+class UploadedPhoto(BaseModel):
+    token: str
+    url: str
+    thumb_url: str | None
 
 
 class RecipeDraft(BaseModel):
@@ -240,6 +254,8 @@ class RecipeDraft(BaseModel):
     image_token: str | None
     image_url: str | None
     source_url: str
+    # Распознанный текст (для импорта со скриншота) — можно сверить
+    text: str = ""
 
 
 class IngredientOut(BaseModel):
@@ -249,6 +265,7 @@ class IngredientOut(BaseModel):
     unit: str
     note: str
     group: str
+    in_pantry: bool = False  # продукт есть в кладовке у текущего пользователя
 
 
 class StepOut(BaseModel):
@@ -256,6 +273,15 @@ class StepOut(BaseModel):
     position: int
     text: str
     timer_minutes: int | None
+    image: str | None = None  # имя файла — отправляется обратно при сохранении
+    image_url: str | None = None
+    thumb_url: str | None = None
+
+
+class PhotoOut(BaseModel):
+    image: str
+    url: str
+    thumb_url: str | None
 
 
 class AuthorOut(BaseModel):
@@ -310,6 +336,46 @@ class RecipeOut(RecipeListItem):
     can_edit: bool
     created_at: datetime
     cook_log: list[CookLogOut] = []
+    photos: list[PhotoOut] = []
+    # Публичная ссылка: только автору/админу
+    share_url: str | None = None
+
+
+class SharedRecipeOut(BaseModel):
+    """Рецепт по публичной ссылке — без личных данных."""
+
+    title: str
+    description: str
+    image_url: str | None
+    category: str | None
+    tags: list[str]
+    servings: int
+    prep_minutes: int | None
+    cook_minutes: int | None
+    total_minutes: int | None
+    difficulty: int | None
+    author: str
+    source_url: str | None
+    nutrition: NutritionOut | None
+    ingredients: list[IngredientOut]
+    steps: list[StepOut]
+    photos: list[PhotoOut]
+    site_name: str
+
+
+class ShareOut(BaseModel):
+    share_url: str | None
+
+
+class RecipeMatch(BaseModel):
+    recipe: RecipeListItem
+    have: int
+    need: int
+    missing: list[str]
+
+
+class RecipeMatchOut(BaseModel):
+    items: list[RecipeMatch]
 
 
 class RecipeListOut(BaseModel):
@@ -358,6 +424,13 @@ class ShoppingFromRecipe(BaseModel):
     ingredient_ids: list[int] | None = None
 
 
+class ShoppingFromProducts(BaseModel):
+    """Недостающие продукты из подбора «что приготовить»."""
+
+    names: list[str] = Field(min_length=1, max_length=100)
+    note: str = Field(default="", max_length=200)
+
+
 class ShoppingItemUpdate(BaseModel):
     checked: bool | None = None
     name: str | None = Field(default=None, min_length=1, max_length=200)
@@ -369,3 +442,82 @@ class ShoppingAdded(BaseModel):
     added: int
     merged: int
     items: list[ShoppingItemOut]
+
+
+# ---------- меню на неделю ----------
+SLOTS = ("breakfast", "lunch", "dinner", "snack")
+
+
+class PlanRecipe(BaseModel):
+    id: int
+    title: str
+    thumb_url: str | None
+    servings: int
+    total_minutes: int | None
+    kcal_per_serving: int | None
+    protein_per_serving: float | None
+    fat_per_serving: float | None
+    carbs_per_serving: float | None
+
+
+class PlanEntryOut(BaseModel):
+    id: int
+    day: date
+    slot: str
+    position: int
+    servings: int
+    note: str
+    recipe: PlanRecipe | None
+
+
+class PlanEntryIn(BaseModel):
+    day: date
+    slot: str = Field(default="dinner", pattern="^(breakfast|lunch|dinner|snack)$")
+    recipe_id: int | None = None
+    servings: int | None = Field(default=None, ge=1, le=100)
+    note: str = Field(default="", max_length=200)
+    owner_id: int | None = None  # чьё меню; по умолчанию своё
+
+
+class PlanEntryUpdate(BaseModel):
+    day: date | None = None
+    slot: str | None = Field(default=None, pattern="^(breakfast|lunch|dinner|snack)$")
+    servings: int | None = Field(default=None, ge=1, le=100)
+    note: str | None = Field(default=None, max_length=200)
+    position: int | None = Field(default=None, ge=0, le=1000)
+
+
+class PlanOut(BaseModel):
+    owner: AuthorOut
+    is_owner: bool
+    members: list[AuthorOut]
+    entries: list[PlanEntryOut]
+
+
+class PlanOwnersOut(BaseModel):
+    """Чьи меню доступны: своё и те, которыми поделились."""
+
+    owners: list[AuthorOut]
+
+
+class PlanToShopping(BaseModel):
+    list_id: int
+    start: date
+    end: date
+    owner_id: int | None = None
+    skip_pantry: bool = True
+    entry_ids: list[int] | None = None
+
+
+class PlanMembersIn(BaseModel):
+    user_ids: list[int] = Field(default_factory=list, max_length=200)
+
+
+# ---------- кладовка ----------
+class PantryItemOut(BaseModel):
+    product_id: int
+    name: str
+
+
+class PantryAdd(BaseModel):
+    name: str = Field(min_length=1, max_length=128)

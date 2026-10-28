@@ -7,7 +7,7 @@ function fmt(n: number) {
 }
 
 /** КБЖУ на порцию. Значения примерные — по справочнику продуктов. */
-export function NutritionCard({ nutrition, servings }: { nutrition: Nutrition; servings: number }) {
+export function NutritionCard({ nutrition, servings, readOnly }: { nutrition: Nutrition; servings: number; readOnly?: boolean }) {
   const v = nutrition.per_serving;
   const empty = nutrition.counted === 0;
 
@@ -56,9 +56,11 @@ export function NutritionCard({ nutrition, servings }: { nutrition: Nutrition; s
           {nutrition.missing.length > 4 &&
             ` и ещё ${nutrition.missing.length - 4} ${plural(nutrition.missing.length - 4, "продукт", "продукта", "продуктов")}`}
           .{" "}
-          <Link to={`/products?q=${encodeURIComponent(nutrition.missing[0])}`} className="font-medium text-primary hover:underline">
+          {!readOnly && (
+            <Link to={`/products?q=${encodeURIComponent(nutrition.missing[0])}`} className="font-medium text-primary hover:underline">
             Дополнить
           </Link>
+          )}
         </p>
       )}
     </div>

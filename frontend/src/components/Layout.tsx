@@ -1,7 +1,7 @@
 import { useEffect } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, Carrot, CloudOff, LogOut, Moon, Settings, ShoppingBasket, Sun } from "lucide-react";
+import { BookOpen, CalendarDays, Carrot, CloudOff, LogOut, Moon, Settings, ShoppingBasket, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/Avatar";
 import { Brand } from "@/components/Logo";
@@ -45,6 +45,7 @@ export function Layout() {
   const toBuy = shopping.data?.reduce((n, l) => n + l.todo, 0) ?? 0;
   const nav = [
     { to: "/", label: "Рецепты", icon: BookOpen, end: true },
+    { to: "/plan", label: "Меню", icon: CalendarDays },
     { to: "/shopping", label: "Покупки", icon: ShoppingBasket, badge: toBuy },
     { to: "/products", label: "Продукты", icon: Carrot },
     ...(user?.is_admin ? [{ to: "/admin", label: "Управление", icon: Settings }] : []),
@@ -61,7 +62,7 @@ export function Layout() {
             <Brand name={siteName} />
           </Link>
 
-          <nav className="ml-4 hidden items-center gap-1 sm:flex">
+          <nav className="ml-4 hidden items-center gap-1 lg:flex">
             {nav.map(({ to, label, icon: Icon, end, badge }) => (
               <NavLink key={to} to={to} end={end} className={navClass}>
                 <Icon className="size-4" /> {label}
@@ -111,12 +112,12 @@ export function Layout() {
         </div>
       )}
 
-      <main className="mx-auto max-w-6xl px-4 py-8 pb-28 sm:px-6 sm:py-10 sm:pb-12 print:p-0">
+      <main className="mx-auto max-w-6xl px-4 py-8 pb-28 sm:px-6 sm:py-10 lg:pb-12 print:p-0">
         <Outlet />
       </main>
 
       {/* Нижняя навигация на телефоне */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 flex gap-1 print:hidden border-t bg-background/90 px-2 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))] backdrop-blur-xl sm:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-30 flex gap-1 print:hidden border-t bg-background/90 px-2 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))] backdrop-blur-xl lg:hidden">
         {nav.map(({ to, label, icon: Icon, end, badge }) => (
           <NavLink key={to} to={to} end={end} className={tabClass}>
             <span className="relative">

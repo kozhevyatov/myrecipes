@@ -63,6 +63,15 @@ export async function syncFavoritesOffline(force = false) {
     const fav = await api.recipes.list({ favorites: true, limit: 100 });
     // Справочники для фильтров на главной
     await Promise.all([api.catalog.categories(), api.catalog.tags(), api.settings.get()].map((p) => p.catch(() => undefined)));
+    // Меню на эту неделю
+    try {
+      const d = new Date();
+      const monday = new Date(d.getFullYear(), d.getMonth(), d.getDate() - ((d.getDay() + 6) % 7));
+      const iso = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, "0")}-${String(monday.getDate()).padStart(2, "0")}`;
+      await api.plan.get(iso, 7);
+    } catch {
+      /* ignore */
+    }
     // Списки покупок — свои и общие, со всеми пунктами
     try {
       const lists = await api.shopping.lists();

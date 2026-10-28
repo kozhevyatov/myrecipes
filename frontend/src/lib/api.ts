@@ -56,9 +56,21 @@ export type Ingredient = {
   unit: string;
   note: string;
   group: string;
+  in_pantry?: boolean;
 };
 
-export type Step = { id?: number; position?: number; text: string; timer_minutes: number | null };
+export type Step = {
+  id?: number;
+  position?: number;
+  text: string;
+  timer_minutes: number | null;
+  /** Имя файла фото шага или временный токен загрузки */
+  image?: string | null;
+  image_url?: string | null;
+  thumb_url?: string | null;
+};
+
+export type Photo = { image: string; url: string; thumb_url: string | null };
 
 export type RecipeListItem = {
   id: number;
@@ -120,6 +132,67 @@ export type Recipe = RecipeListItem & {
   can_edit: boolean;
   created_at: string;
   cook_log: CookLogEntry[];
+  photos: Photo[];
+  share_url: string | null;
+};
+
+export type SharedRecipe = {
+  title: string;
+  description: string;
+  image_url: string | null;
+  category: string | null;
+  tags: string[];
+  servings: number;
+  prep_minutes: number | null;
+  cook_minutes: number | null;
+  total_minutes: number | null;
+  difficulty: number | null;
+  author: string;
+  source_url: string | null;
+  nutrition: Nutrition | null;
+  ingredients: Ingredient[];
+  steps: Step[];
+  photos: Photo[];
+  site_name: string;
+};
+
+export type RecipeMatch = { recipe: RecipeListItem; have: number; need: number; missing: string[] };
+
+export type MealSlot = "breakfast" | "lunch" | "dinner" | "snack";
+
+export type PlanRecipe = {
+  id: number;
+  title: string;
+  thumb_url: string | null;
+  servings: number;
+  total_minutes: number | null;
+  kcal_per_serving: number | null;
+  protein_per_serving: number | null;
+  fat_per_serving: number | null;
+  carbs_per_serving: number | null;
+};
+
+export type PlanEntry = {
+  id: number;
+  day: string;
+  slot: MealSlot;
+  position: number;
+  servings: number;
+  note: string;
+  recipe: PlanRecipe | null;
+};
+
+export type Plan = { owner: Person; is_owner: boolean; members: Person[]; entries: PlanEntry[] };
+
+export type PantryItem = { product_id: number; name: string };
+
+export type RandomQuery = {
+  category_id?: number;
+  tag?: string;
+  favorites?: boolean;
+  max_minutes?: number;
+  not_cooked_days?: number;
+  exclude?: string;
 };
 
 export type RecipeInput = {
@@ -135,7 +208,8 @@ export type RecipeInput = {
   image_token?: string | null;
   tags: string[];
   ingredients: Omit<Ingredient, "id">[];
-  steps: Omit<Step, "id" | "position">[];
+  steps: { text: string; timer_minutes: number | null; image?: string | null }[];
+  photos?: string[];
 };
 
 export type RecipeDraft = {
@@ -152,6 +226,7 @@ export type RecipeDraft = {
   image_token: string | null;
   image_url: string | null;
   source_url: string;
+  text?: string;
 };
 
 export type RecipeQuery = {
@@ -163,6 +238,15 @@ export type RecipeQuery = {
   limit?: number;
   offset?: number;
 };
+
+function qs(params: Record<string, unknown>): string {
+  const q = new URLSearchParams();
+  Object.entries(params).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== "" && v !== false) q.set(k, String(v));
+  });
+  const s = q.toString();
+  return s ? `?${s}` : "";
+}
 
 export class ApiError extends Error {
   status: number;
@@ -389,6 +473,51 @@ export const api = {
       request<Recipe>(`/api/recipes/${id}/cooked/${logId}`, { method: "DELETE" }),
     importFromUrl: (url: string) =>
       request<RecipeDraft>("/api/recipes/import", { method: "POST", body: json({ url }) }),
+    importFromText: (text: string) =>
+      request<RecipeDraft>("/api/recipes/import-text", { method: "POST", body: json({ text }) }),
+    importFromImage: (file: File) => {
+      const form = new FormData();
+      form.append("file", file);
+      return request<RecipeDraft>("/api/recipes/import-image", { method: "POST", body: form });
+    },
+    uploadPhoto: (file: File) => {
+      const form = new FormData();
+      form.append("file", file);
+      return request<{ token: string; url: string; thumb_url: string | null }>("/api/recipes/photos", {
+        method: "POST",
+        body: form,
+      });
+    },
+    random: (params: RandomQuery = {}) => request<RecipeListItem>(`/api/recipes/random${qs(params)}`),
+    match: () => request<{ items: RecipeMatch[] }>("/api/recipes/match"),
+    share: (id: number, on: boolean) =>
+      request<{ share_url: string | null }>(`/api/recipes/${id}/share`, { method: on ? "POST" : "DELETE" }),
+    shared: (token: string) => request<SharedRecipe>(`/api/public/recipes/${encodeURIComponent(token)}`),
+  },
+
+  plan: {
+    get: (start: string, days = 7, owner_id?: number) =>
+      request<Plan>(`/api/plan${qs({ start, days, owner_id })}`),
+    owners: () => request<{ owners: Person[] }>("/api/plan/owners"),
+    setMembers: (user_ids: number[]) =>
+      request<Person[]>("/api/plan/members", { method: "PUT", body: json({ user_ids }) }),
+    add: (data: { day: string; slot: MealSlot; recipe_id?: number | null; servings?: number; note?: string; owner_id?: number }) =>
+      request<PlanEntry>("/api/plan", { method: "POST", body: json(data) }),
+    update: (id: number, data: Partial<Pick<PlanEntry, "day" | "slot" | "servings" | "note" | "position">>) =>
+      request<PlanEntry>(`/api/plan/${id}`, { method: "PATCH", body: json(data) }),
+    remove: (id: number) => request<{ ok: true }>(`/api/plan/${id}`, { method: "DELETE" }),
+    toShopping: (data: { list_id: number; start: string; end: string; owner_id?: number; skip_pantry: boolean }) =>
+      request<{ added: number; merged: number; items: ShoppingItem[] }>("/api/plan/to-shopping", {
+        method: "POST",
+        body: json(data),
+      }),
+  },
+
+  pantry: {
+    list: () => request<PantryItem[]>("/api/pantry"),
+    add: (name: string) => request<PantryItem[]>("/api/pantry", { method: "POST", body: json({ name }) }),
+    remove: (productId: number) => request<PantryItem[]>(`/api/pantry/${productId}`, { method: "DELETE" }),
+    clear: () => request<PantryItem[]>("/api/pantry", { method: "DELETE" }),
   },
 
   catalog: {
@@ -435,6 +564,11 @@ export const api = {
       request<{ added: number; merged: number; items: ShoppingItem[] }>(`/api/shopping/lists/${listId}/from-recipe`, {
         method: "POST",
         body: json({ recipe_id, servings, ingredient_ids }),
+      }),
+    fromProducts: (listId: number, names: string[], note = "") =>
+      request<{ added: number; merged: number; items: ShoppingItem[] }>(`/api/shopping/lists/${listId}/from-products`, {
+        method: "POST",
+        body: json({ names, note }),
       }),
     addText: (listId: number, text: string) =>
       request<ShoppingItem[]>(`/api/shopping/lists/${listId}/items`, { method: "POST", body: json({ text }) }),

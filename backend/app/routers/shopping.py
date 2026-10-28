@@ -13,6 +13,7 @@ from ..schemas import (
     AuthorOut,
     ShoppingAdded,
     ShoppingAddText,
+    ShoppingFromProducts,
     ShoppingFromRecipe,
     ShoppingItemOut,
     ShoppingItemUpdate,
@@ -21,7 +22,7 @@ from ..schemas import (
     ShoppingMembersIn,
 )
 from ..security import get_current_user
-from .recipes import _get_visible
+from .recipes import _get_visible, _is_staple
 
 router = APIRouter(prefix="/api/shopping", tags=["shopping"])
 
@@ -238,8 +239,48 @@ def add_from_recipe(
         for ing in recipe.ingredients:
             if wanted is not None and ing.id not in wanted:
                 continue
+            if _is_staple(ing.product.name):
+                continue  # воду не покупают
             amount = ing.amount * factor if ing.amount is not None else None
             if _add(db, lst, user, ing.product.name, amount, ing.unit, ing.product, recipe.title):
+                merged += 1
+            else:
+                added += 1
+            db.flush()
+    _touch(lst)
+    db.commit()
+    return ShoppingAdded(added=added, merged=merged, items=_items(db, lst))
+
+
+@router.post("/lists/{list_id}/from-products", response_model=ShoppingAdded)
+def add_products(
+    list_id: int, data: ShoppingFromProducts, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+) -> ShoppingAdded:
+    """Список названий без количества — например, чего не хватает для рецепта."""
+    lst = _get_list(db, list_id, user)
+    added = merged = 0
+    with db.no_autoflush:
+        for raw in dict.fromkeys(" ".join(n.split()) for n in data.names):
+            if not raw:
+                continue
+            name = raw[:200]
+            product = db.scalar(select(Product).where(func.lower(Product.name) == name.lower()))
+            # Уже есть в списке (с количеством или без) — второй строкой не добавляем
+            existing = next(
+                (
+                    i
+                    for i in db.scalars(select(ShoppingItem).where(ShoppingItem.list_id == lst.id, ShoppingItem.checked.is_(False)))
+                    if i.name.lower() == name.lower() or (product is not None and i.product_id == product.id)
+                ),
+                None,
+            )
+            if existing:
+                note = data.note.strip()
+                if note and note not in existing.note:
+                    existing.note = ", ".join(x for x in (existing.note, note) if x)[:300]
+                merged += 1
+                continue
+            if _add(db, lst, user, product.name if product else name, None, "", product, data.note.strip()):
                 merged += 1
             else:
                 added += 1

@@ -3,6 +3,9 @@ import { Link, useNavigate, useParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowLeft,
+  CalendarPlus,
+  Home,
+  Link2,
   Printer,
   ShoppingBasket,
   Check,
@@ -20,7 +23,10 @@ import {
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { AddToPlanSheet } from "@/components/AddToPlanSheet";
 import { Avatar } from "@/components/Avatar";
+import { Lightbox } from "@/components/Lightbox";
+import { ShareSheet } from "@/components/ShareSheet";
 import { RecipeImage } from "@/components/RecipeCard";
 import { CookLog } from "@/components/CookLog";
 import { FavoriteButton } from "@/components/FavoriteButton";
@@ -83,6 +89,9 @@ export default function RecipePage() {
   const [servings, setServings] = useState(1);
   const [checked, setChecked] = useState<Set<number>>(new Set());
   const [doneSteps, setDoneSteps] = useState<Set<number>>(new Set());
+  const [viewer, setViewer] = useState<{ photos: string[]; start: number } | null>(null);
+  const [planOpen, setPlanOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
 
   useEffect(() => {
     if (recipe) {
@@ -90,6 +99,13 @@ export default function RecipePage() {
       document.title = recipe.title;
     }
   }, [recipe]);
+
+  // То, что есть дома, сразу отмечено — в покупки не попадёт
+  const recipeKey = recipe?.id;
+  useEffect(() => {
+    if (recipe) setChecked(new Set(recipe.ingredients.filter((i) => i.in_pantry && i.id).map((i) => i.id!)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [recipeKey]);
 
   const remove = useMutation({
     mutationFn: () => api.recipes.remove(recipeId),
@@ -151,6 +167,11 @@ export default function RecipePage() {
   }
 
   const factor = servings / recipe.servings;
+  const gallery = [recipe.image_url, ...(recipe.photos ?? []).map((p) => p.url)].filter(Boolean) as string[];
+  const galleryThumbs = [recipe.thumb_url ?? recipe.image_url, ...(recipe.photos ?? []).map((p) => p.thumb_url ?? p.url)].filter(
+    Boolean,
+  ) as string[];
+  const stepPhotos = recipe.steps.filter((s) => s.image_url).map((s) => s.image_url!);
   const toggle = (set: Set<number>, key: number) => {
     const next = new Set(set);
     if (next.has(key)) next.delete(key);
@@ -169,11 +190,23 @@ export default function RecipePage() {
           <Button variant="ghost" size="icon" className="size-8" onClick={() => window.print()} aria-label="Печать" title="Печать">
             <Printer />
           </Button>
+          {recipe.can_edit && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className={cn("size-8", recipe.share_url && "text-primary")}
+              onClick={() => setShareOpen(true)}
+              aria-label="Поделиться ссылкой"
+              title={recipe.share_url ? "Ссылка включена" : "Поделиться ссылкой"}
+            >
+              <Link2 />
+            </Button>
+          )}
         {recipe.can_edit && (
           <>
-            <Button asChild variant="outline" size="sm">
+            <Button asChild variant="outline" size="sm" aria-label="Изменить">
               <Link to={`/recipes/${recipe.id}/edit`}>
-                <Pencil /> Изменить
+                <Pencil /> <span className="hidden sm:inline">Изменить</span>
               </Link>
             </Button>
             <Button
@@ -194,8 +227,31 @@ export default function RecipePage() {
 
       {/* Шапка */}
       <header className="grid gap-8 md:grid-cols-[1.15fr_1fr] md:items-center print:grid-cols-[14rem_1fr] print:gap-6">
-        <div className="aspect-[4/3] overflow-hidden rounded-3xl border bg-muted print:rounded-xl">
-          <RecipeImage src={recipe.image_url} alt={recipe.title} />
+        <div className="grid gap-2">
+          <button
+            type="button"
+            className="aspect-[4/3] overflow-hidden rounded-3xl border bg-muted print:rounded-xl"
+            onClick={() => gallery.length && setViewer({ photos: gallery, start: 0 })}
+            disabled={!recipe.image_url}
+            aria-label="Открыть фото"
+          >
+            <RecipeImage src={recipe.image_url} alt={recipe.title} />
+          </button>
+          {galleryThumbs.length > 1 && (
+            <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] print:hidden">
+              {galleryThumbs.map((src, i) => (
+                <button
+                  key={src + i}
+                  type="button"
+                  onClick={() => setViewer({ photos: gallery, start: i })}
+                  className="size-16 shrink-0 overflow-hidden rounded-xl border bg-muted sm:size-20"
+                  aria-label={`Фото ${i + 1}`}
+                >
+                  <img src={src} alt="" loading="lazy" className="h-full w-full object-cover" />
+                </button>
+              ))}
+            </div>
+          )}
         </div>
         <div className="grid gap-5">
           <div className="flex flex-wrap items-center gap-2">
@@ -243,6 +299,9 @@ export default function RecipePage() {
                 </Link>
               </Button>
             )}
+            <Button variant="outline" size="lg" className="print:hidden" onClick={() => setPlanOpen(true)}>
+              <CalendarPlus /> В меню
+            </Button>
             {recipe.is_favorite && offlineIds.has(recipe.id) && (
               <span className="flex items-center gap-1.5 text-sm text-muted-foreground print:hidden" title="Откроется без интернета">
                 <Check className="size-4 text-success" /> на устройстве
@@ -346,6 +405,11 @@ export default function RecipePage() {
                               <span className={cn("flex-1 text-[15px]", isChecked && "text-muted-foreground line-through")}>
                                 {ing.product}
                                 {ing.note && <span className="text-muted-foreground">, {ing.note}</span>}
+                                {ing.in_pantry && (
+                                  <span className="ml-1.5 inline-flex translate-y-[-1px] items-center gap-0.5 rounded-full bg-success/12 px-1.5 py-px align-middle text-[11px] font-medium text-success no-underline print:hidden">
+                                    <Home className="size-3" /> дома
+                                  </span>
+                                )}
                               </span>
                               <span
                                 className={cn(
@@ -397,7 +461,10 @@ export default function RecipePage() {
               </label>
             )}
             {checked.size > 0 && checked.size < recipe.ingredients.length && (
-              <p className="mt-2 text-center text-xs text-muted-foreground">Отмеченные считаются «уже есть»</p>
+              <p className="mt-2 text-center text-xs text-muted-foreground print:hidden">
+                Отмеченные считаются «уже есть»
+                {recipe.ingredients.some((i) => i.in_pantry) && " — то, что есть дома, отмечено само"}
+              </p>
             )}
           </div>
           {recipe.nutrition && <NutritionCard nutrition={recipe.nutrition} servings={recipe.servings} />}
@@ -433,6 +500,16 @@ export default function RecipePage() {
                     </button>
                     <div className="grid flex-1 gap-3 pt-1">
                       <p className="max-w-prose text-base leading-relaxed whitespace-pre-line">{step.text}</p>
+                      {step.image_url && (
+                        <button
+                          type="button"
+                          className="w-full max-w-sm overflow-hidden rounded-xl border bg-muted print:max-w-[12rem]"
+                          onClick={() => setViewer({ photos: stepPhotos, start: stepPhotos.indexOf(step.image_url!) })}
+                          aria-label={`Фото к шагу ${i + 1}`}
+                        >
+                          <img src={step.thumb_url ?? step.image_url} alt="" loading="lazy" className="aspect-[4/3] w-full object-cover" />
+                        </button>
+                      )}
                       {step.timer_minutes && (
                         <div>
                           <StepTimer minutes={step.timer_minutes} label={`шаг ${i + 1}`} />
@@ -448,6 +525,10 @@ export default function RecipePage() {
       </div>
 
       <CookLog recipe={recipe} />
+
+      {viewer && <Lightbox photos={viewer.photos} start={viewer.start} onClose={() => setViewer(null)} />}
+      {planOpen && <AddToPlanSheet recipe={recipe} onClose={() => setPlanOpen(false)} />}
+      {shareOpen && <ShareSheet recipe={recipe} onClose={() => setShareOpen(false)} />}
     </article>
   );
 }

@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
 import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { ChefHat, Loader2, Plus, Search, X } from "lucide-react";
+import { ChefHat, Dices, Home, Loader2, Plus, Search, X } from "lucide-react";
+import { RandomRecipeSheet } from "@/components/RandomRecipeSheet";
 import { RecipeCard } from "@/components/RecipeCard";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
@@ -64,6 +65,7 @@ export default function HomePage() {
   const filtered = Boolean(q || categoryId || tag || mine || favorites);
   const name = user?.display_name || user?.username;
   const online = useOnline();
+  const [randomOpen, setRandomOpen] = useState(false);
 
   return (
     <div className="grid gap-6">
@@ -77,12 +79,27 @@ export default function HomePage() {
             </p>
           )}
         </div>
-        <Button asChild size="lg">
-          <Link to="/recipes/new">
-            <Plus /> Новый рецепт
-          </Link>
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button asChild size="lg">
+            <Link to="/recipes/new">
+              <Plus /> Новый рецепт
+            </Link>
+          </Button>
+          {online && (
+            <>
+              <Button variant="outline" size="lg" onClick={() => setRandomOpen(true)}>
+                <Dices /> Что приготовить?
+              </Button>
+              <Button asChild variant="outline" size="lg">
+                <Link to="/pantry">
+                  <Home /> Что есть дома
+                </Link>
+              </Button>
+            </>
+          )}
+        </div>
       </div>
+      {randomOpen && <RandomRecipeSheet onClose={() => setRandomOpen(false)} />}
 
       <div className="relative">
         <Search className="absolute top-1/2 left-4 size-4 -translate-y-1/2 text-muted-foreground" />

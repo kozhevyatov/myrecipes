@@ -1,7 +1,22 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Link, useNavigate, useParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowDown, ArrowLeft, ArrowUp, ImagePlus, Link2, Loader2, Plus, Timer, Trash2, Wand2, X } from "lucide-react";
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowUp,
+  Camera,
+  ClipboardPaste,
+  ImagePlus,
+  Link2,
+  Loader2,
+  Plus,
+  ScanText,
+  Timer,
+  Trash2,
+  Wand2,
+  X,
+} from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Field } from "@/components/ui/field";
@@ -19,7 +34,8 @@ const key = () => `k${++seq}`;
 
 type IngRow = { key: string; product: string; amount: string; unit: string; note: string };
 type Group = { key: string; name: string; items: IngRow[] };
-type StepRow = { key: string; text: string; timer: string };
+type StepRow = { key: string; text: string; timer: string; image: string | null; preview: string | null };
+type PhotoRow = { key: string; image: string; url: string };
 
 type Form = {
   title: string;
@@ -35,10 +51,11 @@ type Form = {
   steps: StepRow[];
   source_url: string;
   image_token: string | null;
+  photos: PhotoRow[];
 };
 
 const emptyIng = (): IngRow => ({ key: key(), product: "", amount: "", unit: "г", note: "" });
-const emptyStep = (): StepRow => ({ key: key(), text: "", timer: "" });
+const emptyStep = (): StepRow => ({ key: key(), text: "", timer: "", image: null, preview: null });
 
 function emptyForm(): Form {
   return {
@@ -55,6 +72,7 @@ function emptyForm(): Form {
     steps: [emptyStep(), emptyStep()],
     source_url: "",
     image_token: null,
+    photos: [],
   };
 }
 
@@ -87,7 +105,7 @@ function fromDraft(d: RecipeDraft): Form {
     cook: d.cook_minutes != null ? String(d.cook_minutes) : "",
     tags: d.tags,
     groups: toGroups(d.ingredients),
-    steps: d.steps.length ? d.steps.map((s) => ({ key: key(), text: s.text, timer: "" })) : [emptyStep()],
+    steps: d.steps.length ? d.steps.map((s) => ({ ...emptyStep(), text: s.text })) : [emptyStep()],
     source_url: d.source_url,
     image_token: d.image_token,
   };
@@ -107,10 +125,17 @@ function fromRecipe(r: Recipe): Form {
     tags: r.tags,
     groups,
     steps: r.steps.length
-      ? r.steps.map((s) => ({ key: key(), text: s.text, timer: s.timer_minutes ? String(s.timer_minutes) : "" }))
+      ? r.steps.map((s) => ({
+          key: key(),
+          text: s.text,
+          timer: s.timer_minutes ? String(s.timer_minutes) : "",
+          image: s.image ?? null,
+          preview: s.thumb_url ?? s.image_url ?? null,
+        }))
       : [emptyStep()],
     source_url: r.source_url ?? "",
     image_token: null,
+    photos: r.photos.map((p) => ({ key: key(), image: p.image, url: p.thumb_url ?? p.url })),
   };
 }
 
@@ -149,7 +174,8 @@ function toInput(f: Form): RecipeInput {
     ),
     steps: f.steps
       .filter((s) => s.text.trim())
-      .map((s) => ({ text: s.text.trim(), timer_minutes: int(s.timer) || null })),
+      .map((s) => ({ text: s.text.trim(), timer_minutes: int(s.timer) || null, image: s.image })),
+    photos: f.photos.map((p) => p.image),
   };
 }
 
@@ -276,7 +302,12 @@ export default function RecipeEditPage() {
   const [importUrl, setImportUrl] = useState("");
   const [importing, setImporting] = useState(false);
   const [importedImage, setImportedImage] = useState<string | null>(null);
+  const [importMode, setImportMode] = useState<"url" | "text" | "image">("url");
+  const [importText, setImportText] = useState("");
+  const [uploading, setUploading] = useState(0);
   const fileInput = useRef<HTMLInputElement>(null);
+  const galleryInput = useRef<HTMLInputElement>(null);
+  const screenshotInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (existing.data && !loaded) {
@@ -308,12 +339,47 @@ export default function RecipeEditPage() {
 
   const currentImage = removeImage ? null : (imagePreview ?? importedImage ?? existing.data?.image_url ?? null);
 
-  async function runImport() {
+  /** Загрузить фото сразу (временное на сервере); вернёт токен и адрес превью. */
+  async function upload(file: File) {
+    setUploading((n) => n + 1);
+    try {
+      return await api.recipes.uploadPhoto(file);
+    } catch (e) {
+      toast.error(`Фото не загрузилось: ${(e as Error).message}`);
+      return null;
+    } finally {
+      setUploading((n) => n - 1);
+    }
+  }
+
+  async function addGalleryPhotos(files: FileList) {
+    for (const file of Array.from(files).slice(0, 30 - form.photos.length)) {
+      const res = await upload(file);
+      if (res) setForm((f) => ({ ...f, photos: [...f.photos, { key: key(), image: res.token, url: res.thumb_url ?? res.url }] }));
+    }
+  }
+
+  async function setStepPhoto(stepKey: string, file: File) {
+    const res = await upload(file);
+    if (res)
+      setForm((f) => ({
+        ...f,
+        steps: f.steps.map((s) => (s.key === stepKey ? { ...s, image: res.token, preview: res.thumb_url ?? res.url } : s)),
+      }));
+  }
+
+  async function runImport(source?: File) {
     const url = importUrl.trim();
-    if (!url) return;
+    if (importMode === "url" && !url) return;
+    if (importMode === "text" && !importText.trim()) return;
     setImporting(true);
     try {
-      const draft = await api.recipes.importFromUrl(url);
+      const draft =
+        importMode === "url"
+          ? await api.recipes.importFromUrl(url)
+          : importMode === "text"
+            ? await api.recipes.importFromText(importText)
+            : await api.recipes.importFromImage(source!);
       setForm(fromDraft(draft));
       setImportedImage(draft.image_url);
       setImageFile(null);
@@ -405,11 +471,70 @@ export default function RecipeEditPage() {
       {!editing && (
         <section className="rounded-3xl bg-accent/60 p-5 sm:p-7">
           <h2 className="flex items-center gap-2 text-lg font-semibold">
-            <Wand2 className="size-5 text-primary" /> Импорт по ссылке
+              <Wand2 className="size-5 text-primary" /> Импорт
           </h2>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Вставьте ссылку на рецепт с кулинарного сайта — название, фото, ингредиенты и шаги заполнятся сами.
+          <div className="mt-3 flex flex-wrap gap-1.5" role="tablist">
+            {(
+              [
+                ["url", "По ссылке", Link2],
+                ["text", "Из текста", ClipboardPaste],
+                ["image", "Со скриншота", ScanText],
+              ] as const
+            ).map(([mode, label, Icon]) => (
+              <button
+                key={mode}
+                type="button"
+                role="tab"
+                aria-selected={importMode === mode}
+                onClick={() => setImportMode(mode)}
+                className={cn(
+                  "flex items-center gap-1.5 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors",
+                  importMode === mode ? "bg-foreground text-background" : "bg-card text-muted-foreground hover:text-foreground",
+                )}
+              >
+                <Icon className="size-4" /> {label}
+              </button>
+            ))}
+          </div>
+          <p className="mt-3 text-sm text-muted-foreground">
+            {importMode === "url" && "Ссылка на рецепт с кулинарного сайта — название, фото, ингредиенты и шаги заполнятся сами."}
+            {importMode === "text" &&
+              "Вставьте рецепт из Telegram, заметок или сообщения — разберём на название, ингредиенты и шаги."}
+            {importMode === "image" &&
+              "Скриншот или фото рецепта — распознаем текст и разберём его. Проверьте результат: распознавание бывает неточным."}
           </p>
+          {importMode === "text" && (
+            <div className="mt-4 grid gap-2">
+              <Textarea
+                rows={7}
+                placeholder={"Блины на молоке\n\nИнгредиенты:\nМолоко — 500 мл\nЯйца — 3 шт\n\nПриготовление:\n1. Взбейте яйца…"}
+                value={importText}
+                onChange={(e) => setImportText(e.target.value)}
+              />
+              <Button type="button" className="justify-self-start" onClick={() => runImport()} disabled={importing || !importText.trim()}>
+                {importing ? <Loader2 className="animate-spin" /> : <Wand2 />} Разобрать
+              </Button>
+            </div>
+          )}
+          {importMode === "image" && (
+            <div className="mt-4">
+              <Button type="button" onClick={() => screenshotInput.current?.click()} disabled={importing}>
+                {importing ? <Loader2 className="animate-spin" /> : <Camera />} {importing ? "Распознаём…" : "Выбрать картинку"}
+              </Button>
+              <input
+                ref={screenshotInput}
+                type="file"
+                accept="image/*"
+                hidden
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) runImport(file);
+                  e.target.value = "";
+                }}
+              />
+            </div>
+          )}
+          {importMode === "url" && (
           <div className="mt-4 flex flex-col gap-2 sm:flex-row">
             <div className="relative flex-1">
               <Link2 className="absolute top-1/2 left-3.5 size-4 -translate-y-1/2 text-muted-foreground" />
@@ -428,10 +553,11 @@ export default function RecipeEditPage() {
                 }}
               />
             </div>
-            <Button type="button" onClick={runImport} disabled={importing || !importUrl.trim()}>
+            <Button type="button" onClick={() => runImport()} disabled={importing || !importUrl.trim()}>
               {importing ? <Loader2 className="animate-spin" /> : <Wand2 />} Загрузить
             </Button>
           </div>
+          )}
         </section>
       )}
 
@@ -604,6 +730,57 @@ export default function RecipeEditPage() {
         </div>
       </Section>
 
+      {/* Галерея */}
+      <Section title="Ещё фото" hint="Готовое блюдо с разных сторон, в разрезе, подача — до 30 фото">
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-5">
+          {form.photos.map((p, pi) => (
+            <div key={p.key} className="group relative aspect-square overflow-hidden rounded-xl border bg-muted">
+              <img src={p.url} alt="" className="h-full w-full object-cover" />
+              <div className="absolute inset-x-1 top-1 flex justify-between">
+                <button
+                  type="button"
+                  aria-label="Сдвинуть левее"
+                  disabled={pi === 0}
+                  onClick={() => set("photos", move(form.photos, pi, pi - 1))}
+                  className="flex size-7 items-center justify-center rounded-full bg-background/85 backdrop-blur-md disabled:opacity-0"
+                >
+                  <ArrowLeft className="size-3.5" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Убрать фото"
+                  onClick={() => set("photos", form.photos.filter((_, i) => i !== pi))}
+                  className="flex size-7 items-center justify-center rounded-full bg-background/85 backdrop-blur-md hover:text-destructive"
+                >
+                  <X className="size-3.5" />
+                </button>
+              </div>
+            </div>
+          ))}
+          {form.photos.length < 30 && (
+            <button
+              type="button"
+              onClick={() => galleryInput.current?.click()}
+              className="flex aspect-square flex-col items-center justify-center gap-1 rounded-xl border-2 border-dashed border-input bg-muted/50 text-sm text-muted-foreground transition-colors hover:border-primary"
+            >
+              {uploading ? <Loader2 className="size-6 animate-spin" /> : <ImagePlus className="size-6" />}
+              Добавить
+            </button>
+          )}
+        </div>
+        <input
+          ref={galleryInput}
+          type="file"
+          accept="image/*"
+          multiple
+          hidden
+          onChange={(e) => {
+            if (e.target.files?.length) addGalleryPhotos(e.target.files);
+            e.target.value = "";
+          }}
+        />
+      </Section>
+
       {/* Ингредиенты */}
       <Section
         title="Ингредиенты"
@@ -639,12 +816,12 @@ export default function RecipeEditPage() {
               {g.items.map((it, ii) => (
                 <div
                   key={it.key}
-                  className="grid grid-cols-[1fr_5rem_6.5rem_auto] items-center gap-2 sm:grid-cols-[1fr_6rem_7rem_10rem_auto]"
+                  className="grid grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] items-center gap-2 border-b border-dashed pb-3 sm:grid-cols-[1fr_6rem_7rem_10rem_auto] sm:border-0 sm:pb-0"
                 >
                   <Input
                     list="product-suggestions"
                     placeholder="Продукт"
-                    className="h-10"
+                    className="col-span-2 h-10 sm:col-span-1"
                     value={it.product}
                     onChange={(e) => updateIng(gi, ii, { product: e.target.value })}
                   />
@@ -666,11 +843,11 @@ export default function RecipeEditPage() {
                   </Select>
                   <Input
                     placeholder="Примечание"
-                    className="col-span-3 col-start-1 row-start-2 h-10 sm:col-span-1 sm:col-start-auto sm:row-start-auto"
+                    className="col-span-2 col-start-1 row-start-3 h-10 sm:col-span-1 sm:col-start-auto sm:row-start-auto"
                     value={it.note}
                     onChange={(e) => updateIng(gi, ii, { note: e.target.value })}
                   />
-                  <div className="row-span-2 flex flex-col sm:row-span-1 sm:flex-row">
+                  <div className="col-start-3 row-span-3 row-start-1 flex flex-col sm:col-start-auto sm:row-span-1 sm:row-start-auto sm:flex-row">
                     <IconBtn
                       label="Выше"
                       disabled={ii === 0}
@@ -730,8 +907,21 @@ export default function RecipeEditPage() {
                   value={s.text}
                   onChange={(e) => updateStep(si, { text: e.target.value })}
                 />
-                <div className="flex items-center gap-2">
-                  <div className="relative w-36">
+                {s.preview && (
+                  <div className="relative w-40 overflow-hidden rounded-xl border">
+                    <img src={s.preview} alt="" className="aspect-[4/3] w-full object-cover" />
+                    <button
+                      type="button"
+                      aria-label="Убрать фото шага"
+                      onClick={() => updateStep(si, { image: null, preview: null })}
+                      className="absolute top-1 right-1 flex size-7 items-center justify-center rounded-full bg-background/85 backdrop-blur-md hover:text-destructive"
+                    >
+                      <X className="size-3.5" />
+                    </button>
+                  </div>
+                )}
+                <div className="flex items-center gap-1 sm:gap-2">
+                  <div className="relative w-28 shrink-0 sm:w-36">
                     <Timer className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
                       inputMode="numeric"
@@ -742,6 +932,23 @@ export default function RecipeEditPage() {
                     />
                     <span className="absolute top-1/2 right-3 -translate-y-1/2 text-xs text-muted-foreground">мин</span>
                   </div>
+                  <label
+                    className="flex h-9 cursor-pointer items-center gap-1.5 rounded-lg px-2.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                    title="Фото шага"
+                  >
+                    <ImagePlus className="size-4" />
+                    <span className="hidden sm:inline">{s.preview ? "Заменить фото" : "Фото"}</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      hidden
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) setStepPhoto(s.key, file);
+                        e.target.value = "";
+                      }}
+                    />
+                  </label>
                   <span className="flex-1" />
                   <IconBtn
                     label="Выше"
@@ -787,7 +994,7 @@ export default function RecipeEditPage() {
           <Button asChild type="button" variant="ghost">
             <Link to={editing ? `/recipes/${recipeId}` : "/"}>Отмена</Link>
           </Button>
-          <Button type="submit" size="lg" disabled={saving}>
+          <Button type="submit" size="lg" disabled={saving || uploading > 0}>
             {saving && <Loader2 className="animate-spin" />} {editing ? "Сохранить" : "Добавить рецепт"}
           </Button>
         </div>

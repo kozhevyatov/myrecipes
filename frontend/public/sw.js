@@ -5,7 +5,7 @@
  *   сохранённая копия. Так избранные рецепты открываются на даче без интернета.
  * - Авторизация, админка, бэкап и любые изменения (POST/PATCH/DELETE) не кэшируются.
  */
-const VERSION = "v4";
+const VERSION = "v5";
 const SHELL = `shell-${VERSION}`;
 const STATIC = `static-${VERSION}`;
 const PHOTOS = "photos-v1";
@@ -20,6 +20,9 @@ const OFFLINE_API = [
   /^\/api\/setup\/status$/,
   /^\/api\/shopping\/lists$/,
   /^\/api\/shopping\/lists\/\d+\/items$/,
+  /^\/api\/plan$/,
+  /^\/api\/plan\/owners$/,
+  /^\/api\/pantry$/,
 ];
 
 self.addEventListener("install", (event) => {

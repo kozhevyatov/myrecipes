@@ -16,6 +16,10 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=1331
 
 WORKDIR /app
+# Распознавание текста со скриншотов рецептов (русский + английский)
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-rus \
+ && rm -rf /var/lib/apt/lists/*
 COPY backend/requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 

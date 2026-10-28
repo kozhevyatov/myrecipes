@@ -23,7 +23,7 @@ from starlette.background import BackgroundTask
 from ..config import UPLOAD_DIR
 from ..db import get_db
 from ..images import MAX_UPLOAD_BYTES, save_image_bytes
-from ..models import Category, Recipe, User
+from ..models import Category, Recipe, RecipePhoto, User
 from ..schemas import RecipeIn
 from ..security import get_current_user
 from .recipes import _apply
@@ -35,7 +35,7 @@ VERSION = 1
 MAX_ARCHIVE_BYTES = 2 * 1024 * 1024 * 1024  # 2 ГБ
 
 
-def _recipe_dict(r: Recipe, image_path: str | None) -> dict:
+def _recipe_dict(r: Recipe, image_path: str | None, put=lambda name: None) -> dict:  # noqa: ANN001
     return {
         "title": r.title,
         "description": r.description,
@@ -51,7 +51,8 @@ def _recipe_dict(r: Recipe, image_path: str | None) -> dict:
             {"product": i.product.name, "amount": i.amount, "unit": i.unit, "note": i.note, "group": i.group_name}
             for i in r.ingredients
         ],
-        "steps": [{"text": s.text, "timer_minutes": s.timer_minutes} for s in r.steps],
+        "steps": [{"text": s.text, "timer_minutes": s.timer_minutes, "image": put(s.image)} for s in r.steps],
+        "photos": [p for p in (put(ph.image) for ph in r.photos) if p],
         "image": image_path,
         "author": r.author.username,
         "created_at": r.created_at.isoformat() if r.created_at else None,
@@ -76,13 +77,20 @@ def export_recipes(
     try:
         with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as zf:
             items = []
-            for r in recipes:
-                image_path = None
-                if r.image and (UPLOAD_DIR / r.image).is_file():
-                    image_path = f"images/{r.image}"
+            written: set[str] = set()
+
+            def put(name: str | None) -> str | None:
+                if not name or not (UPLOAD_DIR / name).is_file():
+                    return None
+                arc = f"images/{name}"
+                if arc not in written:
                     # WebP уже сжат — кладём без повторного сжатия
-                    zf.write(UPLOAD_DIR / r.image, image_path, compress_type=zipfile.ZIP_STORED)
-                items.append(_recipe_dict(r, image_path))
+                    zf.write(UPLOAD_DIR / name, arc, compress_type=zipfile.ZIP_STORED)
+                    written.add(arc)
+                return arc
+
+            for r in recipes:
+                items.append(_recipe_dict(r, put(r.image), put))
             categories = db.scalars(select(Category).order_by(Category.sort_order, Category.name)).all()
             manifest = {
                 "format": FORMAT,
@@ -188,20 +196,29 @@ def _restore(db: Session, user: User, zf: zipfile.ZipFile, manifest: dict, skip_
                 source_url=item.get("source_url"),
                 tags=item.get("tags") or [],
                 ingredients=item.get("ingredients") or [],
-                steps=item.get("steps") or [],
+                # Фото шагов разберём ниже — из архива
+                steps=[{k: v for k, v in st.items() if k != "image"} for st in (item.get("steps") or []) if isinstance(st, dict)],
             )
             recipe = Recipe(author_id=author.id)
             db.add(recipe)
             _apply(db, recipe, data)
 
-            image = item.get("image")
-            if image and image in names:
-                info = zf.getinfo(image)
-                if info.file_size <= MAX_UPLOAD_BYTES:
-                    try:
-                        recipe.image = save_image_bytes(zf.read(image))
-                    except HTTPException:
-                        pass  # битое фото — рецепт всё равно восстанавливаем
+            def load(arc) -> str | None:  # noqa: ANN001
+                if not isinstance(arc, str) or arc not in names or zf.getinfo(arc).file_size > MAX_UPLOAD_BYTES:
+                    return None
+                try:
+                    return save_image_bytes(zf.read(arc))
+                except HTTPException:
+                    return None  # битое фото — рецепт всё равно восстанавливаем
+
+            recipe.image = load(item.get("image"))
+            raw_steps = [st for st in (item.get("steps") or []) if isinstance(st, dict) and str(st.get("text", "")).strip()]
+            for step, raw in zip(recipe.steps, raw_steps):
+                step.image = load(raw.get("image"))
+            recipe.photos = [
+                RecipePhoto(position=i, image=n)
+                for i, n in enumerate(n for n in (load(a) for a in (item.get("photos") or [])[:30]) if n)
+            ]
             db.commit()
             created += 1
         except (ValidationError, HTTPException, ValueError, TypeError, SQLAlchemyError) as e:
