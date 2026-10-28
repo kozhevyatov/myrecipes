@@ -109,7 +109,7 @@ export default function CookPage() {
             <div className="rounded-3xl bg-accent p-5">
               <PartyPopper className="size-10 text-primary" />
             </div>
-            <h1 className="text-3xl font-extrabold">Приятного аппетита!</h1>
+            <h1 className="title-display text-3xl">Приятного аппетита!</h1>
             <p className="text-muted-foreground">Все шаги пройдены.</p>
             <div className="mt-2 flex gap-3">
               <Button variant="outline" onClick={() => setIndex(0)}>
@@ -122,7 +122,7 @@ export default function CookPage() {
           </div>
         ) : (
           <div className="mx-auto flex min-h-full max-w-3xl flex-col justify-center gap-8 px-6 py-10 sm:px-10">
-            <span className="flex size-14 items-center justify-center rounded-2xl bg-primary text-2xl font-extrabold text-primary-foreground">
+            <span className="title-display flex size-14 items-center justify-center rounded-full bg-accent text-2xl text-accent-foreground">
               {index + 1}
             </span>
             <p className="text-2xl leading-snug font-semibold whitespace-pre-line sm:text-3xl sm:leading-snug">
@@ -140,7 +140,7 @@ export default function CookPage() {
         {showIngredients && (
           <div className="absolute inset-0 overflow-y-auto bg-background/97 backdrop-blur-sm">
             <div className="mx-auto max-w-xl px-6 py-6">
-              <h2 className="text-xl font-extrabold">
+              <h2 className="text-xl font-semibold">
                 Ингредиенты · {servings} {plural(servings, "порция", "порции", "порций")}
               </h2>
               <ul className="mt-4 grid gap-1">
@@ -151,7 +151,7 @@ export default function CookPage() {
                   return (
                     <li key={key}>
                       {showGroup && (
-                        <h3 className="mt-4 mb-1 text-xs font-bold tracking-wider text-muted-foreground uppercase">
+                        <h3 className="mt-5 mb-1 px-3 text-sm font-semibold text-muted-foreground">
                           {ing.group}
                         </h3>
                       )}

@@ -53,8 +53,8 @@ export function StepTimer({ minutes, label }: { minutes: number; label: string }
   return (
     <span
       className={cn(
-        "inline-flex items-center gap-1 rounded-full border text-sm font-bold tabular-nums transition-colors",
-        running ? "border-primary bg-primary text-primary-foreground" : "bg-card",
+        "inline-flex items-center gap-1 rounded-full border text-sm font-semibold tabular-nums transition-colors",
+        running ? "border-highlight bg-highlight text-highlight-foreground" : "bg-card",
       )}
     >
       <button

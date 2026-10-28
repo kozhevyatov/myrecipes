@@ -3,7 +3,7 @@
  * - Собранные файлы /assets/* (имена с хешем) и фото /api/uploads/* — сначала кэш.
  * - Остальной /api/* не кэшируется: данные всегда свежие.
  */
-const VERSION = "v1";
+const VERSION = "v2";
 const SHELL = `shell-${VERSION}`;
 const STATIC = `static-${VERSION}`;
 const PHOTOS = "photos-v1";

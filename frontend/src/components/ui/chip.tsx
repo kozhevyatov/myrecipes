@@ -10,10 +10,10 @@ export function Chip({
     <button
       type="button"
       className={cn(
-        "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full border px-3.5 text-sm font-semibold whitespace-nowrap transition-colors",
+        "inline-flex h-9 shrink-0 items-center gap-1.5 rounded-full px-4 text-sm font-medium whitespace-nowrap transition-colors",
         active
-          ? "border-primary bg-primary text-primary-foreground"
-          : "bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground",
+          ? "bg-foreground text-background"
+          : "bg-card text-muted-foreground ring-1 ring-border hover:text-foreground hover:ring-foreground/20",
         className,
       )}
       {...props}
@@ -24,7 +24,7 @@ export function Chip({
 export function Tag({ className, ...props }: React.ComponentProps<"span">) {
   return (
     <span
-      className={cn("inline-flex items-center rounded-md bg-accent px-2 py-0.5 text-xs font-semibold text-accent-foreground", className)}
+      className={cn("inline-flex items-center rounded-full bg-accent px-2.5 py-0.5 text-xs font-medium text-accent-foreground", className)}
       {...props}
     />
   );

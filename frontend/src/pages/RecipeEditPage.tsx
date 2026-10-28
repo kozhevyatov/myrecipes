@@ -164,10 +164,10 @@ function move<T>(list: T[], from: number, to: number): T[] {
 // ---------- мелкие компоненты ----------
 function Section({ title, hint, children, action }: { title: string; hint?: string; children: ReactNode; action?: ReactNode }) {
   return (
-    <section className="rounded-2xl border bg-card p-5 sm:p-6">
+    <section className="rounded-3xl bg-card p-5 ring-1 ring-border sm:p-7">
       <div className="mb-5 flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-extrabold">{title}</h2>
+          <h2 className="text-lg font-semibold">{title}</h2>
           {hint && <p className="mt-0.5 text-sm text-muted-foreground">{hint}</p>}
         </div>
         {action}
@@ -219,8 +219,8 @@ function TagsInput({ value, onChange, suggestions }: { value: string[]; onChange
   return (
     <div className="flex min-h-11 flex-wrap items-center gap-1.5 rounded-lg border border-input bg-card px-2 py-1.5 focus-within:border-primary focus-within:ring-4 focus-within:ring-ring/30">
       {value.map((t) => (
-        <span key={t} className="flex items-center gap-1 rounded-md bg-accent py-1 pr-1 pl-2 text-sm font-semibold text-accent-foreground">
-          #{t}
+        <span key={t} className="flex items-center gap-1 rounded-full bg-accent py-1 pr-1.5 pl-3 text-sm font-medium text-accent-foreground">
+          {t}
           <button type="button" onClick={() => onChange(value.filter((x) => x !== t))} aria-label={`Убрать ${t}`}>
             <X className="size-3.5" />
           </button>
@@ -400,11 +400,11 @@ export default function RecipeEditPage() {
           </Link>
         </Button>
       </div>
-      <h1 className="text-3xl font-extrabold">{editing ? "Редактирование" : "Новый рецепт"}</h1>
+      <h1 className="title-display text-3xl sm:text-4xl">{editing ? "Редактирование" : "Новый рецепт"}</h1>
 
       {!editing && (
-        <section className="rounded-2xl border border-primary/30 bg-accent/50 p-5 sm:p-6">
-          <h2 className="flex items-center gap-2 text-lg font-extrabold">
+        <section className="rounded-3xl bg-accent/60 p-5 sm:p-7">
+          <h2 className="flex items-center gap-2 text-lg font-semibold">
             <Wand2 className="size-5 text-primary" /> Импорт по ссылке
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">

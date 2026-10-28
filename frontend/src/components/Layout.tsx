@@ -10,8 +10,8 @@ import { cn } from "@/lib/utils";
 
 const navClass = ({ isActive }: { isActive: boolean }) =>
   cn(
-    "flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold transition-colors",
-    isActive ? "bg-accent text-accent-foreground" : "text-muted-foreground hover:text-foreground",
+    "flex items-center gap-2 rounded-full px-3.5 py-1.5 text-sm font-medium transition-colors",
+    isActive ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground",
   );
 
 export function Layout() {
@@ -28,7 +28,7 @@ export function Layout() {
 
   return (
     <div className="min-h-svh">
-      <header className="sticky top-0 z-30 border-b bg-background/80 backdrop-blur-md">
+      <header className="sticky top-0 z-30 border-b border-transparent bg-background/75 backdrop-blur-xl supports-[backdrop-filter]:border-border/60">
         <div className="mx-auto flex h-16 max-w-6xl items-center gap-4 px-4 sm:px-6">
           <Link to="/" className="shrink-0">
             <Brand name={siteName} />
@@ -51,7 +51,7 @@ export function Layout() {
             </Button>
             {user && (
               <>
-                <span className="hidden px-2 text-sm font-semibold text-muted-foreground md:inline">
+                <span className="hidden px-2 text-sm text-muted-foreground md:inline">
                   {user.display_name || user.username}
                 </span>
                 <Button
@@ -71,12 +71,12 @@ export function Layout() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-6xl px-4 py-8 pb-24 sm:px-6 sm:pb-8">
+      <main className="mx-auto max-w-6xl px-4 py-8 pb-28 sm:px-6 sm:py-10 sm:pb-12">
         <Outlet />
       </main>
 
       {/* Нижняя навигация на телефоне */}
-      <nav className="fixed inset-x-0 bottom-0 z-30 flex justify-around border-t bg-background/90 py-2 backdrop-blur-md sm:hidden">
+      <nav className="fixed inset-x-0 bottom-0 z-30 flex justify-center gap-2 border-t bg-background/85 px-4 pt-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] backdrop-blur-xl sm:hidden">
         <NavLink to="/" end className={navClass}>
           <BookOpen className="size-4" /> Рецепты
         </NavLink>

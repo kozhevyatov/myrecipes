@@ -66,8 +66,12 @@ export default function HomePage() {
     <div className="grid gap-6">
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
-          <p className="text-sm font-semibold text-primary">Привет, {name}!</p>
-          <h1 className="mt-1 text-3xl font-extrabold sm:text-4xl">Рецепты</h1>
+          <h1 className="title-display text-4xl sm:text-5xl">Рецепты</h1>
+          {!filtered && total > 0 && (
+            <p className="mt-2 text-muted-foreground">
+              {name}, в книге {total} {plural(total, "рецепт", "рецепта", "рецептов")}
+            </p>
+          )}
         </div>
         <Button asChild size="lg">
           <Link to="/recipes/new">
@@ -79,7 +83,7 @@ export default function HomePage() {
       <div className="relative">
         <Search className="absolute top-1/2 left-4 size-4 -translate-y-1/2 text-muted-foreground" />
         <Input
-          className="h-12 rounded-xl pr-11 pl-11"
+          className="h-13 rounded-full border-transparent bg-card pr-11 pl-11 shadow-[0_1px_2px_rgb(0_0_0/0.04),0_0_0_1px_var(--border)] focus-visible:shadow-none"
           placeholder="Название, тег или ингредиент — например, «курица рис»"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -125,11 +129,11 @@ export default function HomePage() {
               onClick={() => setParam("tag", tag === t.name ? null : t.name)}
               className={
                 tag === t.name
-                  ? "rounded-md bg-primary px-2 py-1 text-xs font-bold text-primary-foreground"
-                  : "rounded-md bg-accent px-2 py-1 text-xs font-semibold text-accent-foreground hover:bg-accent/70"
+                  ? "rounded-full bg-highlight px-3 py-1 text-xs font-medium text-highlight-foreground"
+                  : "rounded-full bg-accent px-3 py-1 text-xs font-medium text-accent-foreground hover:bg-accent/70"
               }
             >
-              #{t.name}
+              {t.name}
             </button>
           ))}
         </div>
@@ -140,9 +144,9 @@ export default function HomePage() {
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
       ) : items.length === 0 ? (
-        <div className="flex flex-col items-center rounded-3xl border border-dashed bg-card/50 px-6 py-20 text-center">
-          <div className="rounded-2xl bg-accent p-4">
-            <ChefHat className="size-8 text-primary" />
+        <div className="flex flex-col items-center rounded-3xl bg-muted/60 px-6 py-20 text-center">
+          <div className="rounded-2xl bg-card p-4">
+            <ChefHat className="size-8 text-primary" strokeWidth={1.5} />
           </div>
           {filtered ? (
             <>
@@ -173,7 +177,7 @@ export default function HomePage() {
               Найдено {total} {plural(total, "рецепт", "рецепта", "рецептов")}
             </p>
           )}
-          <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid gap-x-5 gap-y-8 sm:grid-cols-2 lg:grid-cols-3">
             {items.map((r) => (
               <RecipeCard key={r.id} recipe={r} />
             ))}

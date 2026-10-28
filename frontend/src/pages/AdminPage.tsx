@@ -456,7 +456,7 @@ function UsersCard() {
 export default function AdminPage() {
   return (
     <div className="grid gap-8">
-      <h1 className="text-3xl font-extrabold sm:text-4xl">Управление</h1>
+      <h1 className="title-display text-4xl sm:text-5xl">Управление</h1>
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
         <div className="grid content-start gap-6">
           <SettingsCard />

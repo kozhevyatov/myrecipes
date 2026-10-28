@@ -31,11 +31,11 @@ import { cn } from "@/lib/utils";
 
 function Meta({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
-    <div className="flex items-center gap-3 rounded-xl bg-muted/60 px-3.5 py-2.5">
-      <span className="text-primary">{icon}</span>
-      <span>
+    <div className="flex items-center gap-2.5">
+      <span className="flex size-9 items-center justify-center rounded-full bg-accent text-accent-foreground">{icon}</span>
+      <span className="leading-tight">
         <span className="block text-xs text-muted-foreground">{label}</span>
-        <span className="block text-sm font-bold">{value}</span>
+        <span className="block text-sm font-semibold">{value}</span>
       </span>
     </div>
   );
@@ -154,16 +154,16 @@ export default function RecipePage() {
       </div>
 
       {/* Шапка */}
-      <header className="grid gap-6 md:grid-cols-[1.1fr_1fr] md:items-center">
-        <div className="aspect-[4/3] overflow-hidden rounded-3xl border shadow-sm">
+      <header className="grid gap-8 md:grid-cols-[1.15fr_1fr] md:items-center">
+        <div className="aspect-[4/3] overflow-hidden rounded-3xl bg-muted">
           <RecipeImage src={recipe.image_url} alt={recipe.title} />
         </div>
-        <div className="grid gap-4">
+        <div className="grid gap-5">
           <div className="flex flex-wrap items-center gap-2">
             {recipe.category && (
               <Link
                 to={`/?category=${recipe.category.id}`}
-                className="text-sm font-bold text-primary hover:underline"
+                className="rounded-full bg-accent px-3 py-1 text-xs font-medium text-accent-foreground hover:bg-accent/70"
               >
                 {recipe.category.name}
               </Link>
@@ -174,11 +174,11 @@ export default function RecipePage() {
               </span>
             )}
           </div>
-          <h1 className="text-3xl leading-tight font-extrabold sm:text-4xl">{recipe.title}</h1>
+          <h1 className="title-display text-[2rem] sm:text-[2.75rem]">{recipe.title}</h1>
           {recipe.description && (
             <p className="leading-relaxed whitespace-pre-line text-muted-foreground">{recipe.description}</p>
           )}
-          <div className="grid grid-cols-2 gap-2">
+          <div className="flex flex-wrap gap-x-6 gap-y-3">
             {recipe.prep_minutes != null && (
               <Meta icon={<Clock className="size-4" />} label="Подготовка" value={formatMinutes(recipe.prep_minutes)!} />
             )}
@@ -220,7 +220,7 @@ export default function RecipePage() {
             <div className="flex flex-wrap gap-1.5">
               {recipe.tags.map((t) => (
                 <Link key={t} to={`/?tag=${encodeURIComponent(t)}`}>
-                  <Tag className="hover:bg-accent/70">#{t}</Tag>
+                  <Tag className="hover:bg-accent/70">{t}</Tag>
                 </Link>
               ))}
             </div>
@@ -232,9 +232,9 @@ export default function RecipePage() {
         {/* Ингредиенты */}
         <section className="grid gap-4 lg:sticky lg:top-24">
           <KeepScreenOn />
-          <div className="rounded-2xl border bg-card p-5">
+          <div className="rounded-3xl bg-card p-5 ring-1 ring-border sm:p-6">
             <div className="flex items-center justify-between gap-3">
-              <h2 className="text-xl font-extrabold">Ингредиенты</h2>
+              <h2 className="text-xl font-semibold">Ингредиенты</h2>
               <div className="flex items-center gap-1 rounded-full bg-muted p-1">
                 <button
                   className="flex size-8 items-center justify-center rounded-full hover:bg-card disabled:opacity-40"
@@ -272,7 +272,7 @@ export default function RecipePage() {
                 {groups.map((g, gi) => (
                   <div key={gi}>
                     {g.name && (
-                      <h3 className="mb-2 text-xs font-bold tracking-wider text-muted-foreground uppercase">{g.name}</h3>
+                      <h3 className="mb-1.5 px-2 text-sm font-semibold text-muted-foreground">{g.name}</h3>
                     )}
                     <ul className="grid gap-0.5">
                       {g.items.map((ing, i) => {
@@ -299,7 +299,7 @@ export default function RecipePage() {
                               </span>
                               <span
                                 className={cn(
-                                  "shrink-0 text-[15px] font-bold whitespace-nowrap tabular-nums",
+                                  "shrink-0 text-[15px] font-semibold whitespace-nowrap tabular-nums",
                                   isChecked && "text-muted-foreground",
                                 )}
                               >
@@ -319,11 +319,11 @@ export default function RecipePage() {
 
         {/* Шаги */}
         <section>
-          <h2 className="text-xl font-extrabold">Приготовление</h2>
+          <h2 className="text-xl font-semibold">Приготовление</h2>
           {recipe.steps.length === 0 ? (
             <p className="mt-4 text-sm text-muted-foreground">Шаги не описаны.</p>
           ) : (
-            <ol className="mt-4 grid gap-3">
+            <ol className="mt-2 grid">
               {recipe.steps.map((step, i) => {
                 const key = step.id ?? i;
                 const done = doneSteps.has(key);
@@ -331,22 +331,22 @@ export default function RecipePage() {
                   <li
                     key={key}
                     className={cn(
-                      "flex gap-4 rounded-2xl border bg-card p-4 transition-opacity sm:p-5",
+                      "flex gap-4 border-b py-5 transition-opacity last:border-b-0",
                       done && "opacity-55",
                     )}
                   >
                     <button
                       onClick={() => setDoneSteps((s) => toggle(s, key))}
                       className={cn(
-                        "flex size-9 shrink-0 items-center justify-center rounded-full text-sm font-extrabold transition-colors",
-                        done ? "bg-success text-white" : "bg-primary text-primary-foreground",
+                        "flex size-9 shrink-0 items-center justify-center rounded-full text-sm font-semibold tabular-nums transition-colors",
+                        done ? "bg-success text-white" : "bg-accent text-accent-foreground hover:bg-primary hover:text-primary-foreground",
                       )}
                       aria-label={done ? "Отметить как невыполненный" : "Отметить как выполненный"}
                     >
                       {done ? <Check className="size-4" strokeWidth={3} /> : i + 1}
                     </button>
                     <div className="grid flex-1 gap-3 pt-1">
-                      <p className="text-[15px] leading-relaxed whitespace-pre-line">{step.text}</p>
+                      <p className="max-w-prose text-base leading-relaxed whitespace-pre-line">{step.text}</p>
                       {step.timer_minutes && (
                         <div>
                           <StepTimer minutes={step.timer_minutes} label={`шаг ${i + 1}`} />
