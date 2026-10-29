@@ -288,13 +288,59 @@ _GENITIVE = {
 }
 
 
+_GENITIVE.update({
+    "масла": "масло", "шоколада": "шоколад", "порошка": "порошок", "экстракта": "экстракт",
+    "пудры": "пудра", "желтка": "желток", "сыра": "сыр", "соуса": "соус", "бульона": "бульон",
+    "пасты": "паста", "муки": "мука", "сахара": "сахар", "орехов": "орехи", "сливок": "сливки",
+    "зелени": "зелень", "петрушки": "петрушка", "укропа": "укроп", "сгущенки": "сгущенка",
+    "йогурта": "йогурт", "филе": "филе", "печенья": "печенье", "желатина": "желатин",
+})
+
+
+def _gender(noun: str) -> str:
+    n = noun.lower()
+    if n.endswith(("и", "ы")):
+        return "pl"
+    if n.endswith(("а", "я")) or n.endswith("ь") and n in ("соль", "морковь", "зелень"):
+        return "f"
+    if n.endswith(("о", "е", "ё")):
+        return "n"
+    return "m"
+
+
+def _adj(word: str, gender: str) -> str:
+    """Прилагательное из родительного падежа: «темного» → «темный», «сливочного» (масла) → «сливочное»."""
+    w = word.lower()
+    soft = len(w) > 4 and w[-4] in "кгхжшчщ"
+    if w.endswith(("ого", "его")):
+        stem = w[:-3]
+        return {"m": stem + ("ий" if soft or w.endswith("его") else "ый"), "n": stem + ("ее" if w.endswith("его") else "ое")}.get(gender, word)
+    if w.endswith(("ой", "ей")) and gender == "f":
+        return w[:-2] + ("яя" if w.endswith("ей") else "ая")
+    if w.endswith(("ых", "их")) and gender == "pl":
+        return w[:-2] + ("ие" if w.endswith("их") else "ые")
+    return word
+
+
 def _nominative(name: str) -> str:
     low = name.lower().strip()
     if low in _GENITIVE:
         return _GENITIVE[low]
     for gen, nom in _GENITIVE.items():
-        if low.startswith(gen + " "):
+        if " " in gen and low.startswith(gen + " "):
             return nom + name.strip()[len(gen):]
+    # По словам: ищем существительное («размягченного сливочного масла» → «масла»),
+    # прилагательные перед ним согласуем по роду, хвост («22%») оставляем как есть
+    words = name.split()
+    for j, word in enumerate(words):
+        head, _, last = word.rpartition("-")  # «какао-порошка»
+        nom = _GENITIVE.get(last.lower())
+        if not nom or " " in nom or last.lower().endswith(("ого", "его")):
+            continue
+        g = _gender(nom)
+        before = [_adj(w, g) for w in words[:j]]
+        noun = f"{head}-{nom}" if head else nom
+        return " ".join([*before, noun, *words[j + 1 :]])
     return name
 
 
