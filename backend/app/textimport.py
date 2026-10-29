@@ -12,6 +12,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+from difflib import SequenceMatcher
 
 from PIL import Image, ImageOps, UnidentifiedImageError
 
@@ -257,6 +258,53 @@ def parse_text(text: str) -> ImportedRecipe:
 
 
 # ---------------- распознавание текста ----------------
+def _norm(line: str) -> str:
+    return re.sub(r"[^\wё]+", "", line.lower())
+
+
+def _same(a: str, b: str) -> bool:
+    """Строки совпадают с поправкой на ошибки распознавания и обрезанный край."""
+    if not a or not b:
+        return False
+    # Разные числа — разные строки («мука 200 г» ≠ «мука 300 г»)
+    if re.findall(r"\d+", a) != re.findall(r"\d+", b):
+        return False
+    if a == b or (min(len(a), len(b)) >= 8 and (a in b or b in a)):
+        return True
+    return SequenceMatcher(None, a, b).ratio() >= 0.75
+
+
+def join_pages(texts: list[str]) -> str:
+    """Склеить текст нескольких скриншотов по порядку. Соседние скриншоты обычно
+    перекрываются на несколько строк — повтор в начале следующего убираем."""
+    out: list[str] = []
+    for text in texts:
+        lines = text.split("\n")
+        tail = [n for n in (_norm(x) for x in out) if n][-30:]
+        if tail:
+            # Идём сверху вниз по новому скриншоту, пока строки уже были в конце прошлого.
+            # Пару несовпадений подряд прощаем: на краю бывает обрезанная наполовину строка.
+            cut, misses, seen = 0, 0, 0
+            for idx, line in enumerate(lines):
+                n = _norm(line)
+                if not n:
+                    continue
+                seen += 1
+                if seen > 30:
+                    break
+                if any(_same(n, t) for t in tail):
+                    cut, misses = idx + 1, 0
+                else:
+                    misses += 1
+                    if misses > 2:
+                        break
+            lines = lines[cut:]
+        if out and lines:
+            out.append("")
+        out.extend(lines)
+    return re.sub(r"\n{3,}", "\n\n", "\n".join(out)).strip()
+
+
 class OcrError(Exception):
     pass
 

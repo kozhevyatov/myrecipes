@@ -475,9 +475,9 @@ export const api = {
       request<RecipeDraft>("/api/recipes/import", { method: "POST", body: json({ url }) }),
     importFromText: (text: string) =>
       request<RecipeDraft>("/api/recipes/import-text", { method: "POST", body: json({ text }) }),
-    importFromImage: (file: File) => {
+    importFromImages: (files: File[]) => {
       const form = new FormData();
-      form.append("file", file);
+      files.forEach((f) => form.append("files", f));
       return request<RecipeDraft>("/api/recipes/import-image", { method: "POST", body: form });
     },
     uploadPhoto: (file: File) => {

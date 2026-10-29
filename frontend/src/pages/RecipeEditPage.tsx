@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { useNavigate, useParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowDown,
@@ -26,6 +26,7 @@ import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { api, type Recipe, type RecipeDraft, type RecipeInput } from "@/lib/api";
 import { DIFFICULTY, UNITS } from "@/lib/format";
+import { useBackToRecipe, useBackToSection } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 
 // ---------- состояние формы ----------
@@ -282,6 +283,9 @@ export default function RecipeEditPage() {
   const recipeId = Number(id);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const backToRecipe = useBackToRecipe(recipeId);
+  const backToSection = useBackToSection();
+  const leave = editing ? backToRecipe : backToSection;
 
   const existing = useQuery({
     queryKey: ["recipe", recipeId],
@@ -305,6 +309,11 @@ export default function RecipeEditPage() {
   const [importMode, setImportMode] = useState<"url" | "text" | "image">("url");
   const [importText, setImportText] = useState("");
   const [uploading, setUploading] = useState(0);
+  // Скриншоты для распознавания — по порядку
+  const [shots, setShots] = useState<{ key: string; file: File; url: string }[]>([]);
+  const shotsRef = useRef(shots);
+  shotsRef.current = shots;
+  useEffect(() => () => shotsRef.current.forEach((x) => URL.revokeObjectURL(x.url)), []);
   const fileInput = useRef<HTMLInputElement>(null);
   const galleryInput = useRef<HTMLInputElement>(null);
   const screenshotInput = useRef<HTMLInputElement>(null);
@@ -368,7 +377,7 @@ export default function RecipeEditPage() {
       }));
   }
 
-  async function runImport(source?: File) {
+  async function runImport() {
     const url = importUrl.trim();
     if (importMode === "url" && !url) return;
     if (importMode === "text" && !importText.trim()) return;
@@ -379,13 +388,14 @@ export default function RecipeEditPage() {
           ? await api.recipes.importFromUrl(url)
           : importMode === "text"
             ? await api.recipes.importFromText(importText)
-            : await api.recipes.importFromImage(source!);
+            : await api.recipes.importFromImages(shots.map((x) => x.file));
       setForm(fromDraft(draft));
       setImportedImage(draft.image_url);
       setImageFile(null);
       setRemoveImage(false);
       // Категории с сайта нет у нас — предложим создать, но не создаём сами
       setNewCategory(draft.category_id ? null : draft.category_name || null);
+      if (importMode === "image") setShots([]);
       const n = draft.ingredients.length;
       toast.success("Рецепт загружен — проверьте и сохраните", {
         description: `${n} ингредиент(ов), ${draft.steps.length} шаг(ов)${draft.image_url ? ", фото" : ""}`,
@@ -428,7 +438,9 @@ export default function RecipeEditPage() {
       queryClient.invalidateQueries({ queryKey: ["tags"] });
       queryClient.invalidateQueries({ queryKey: ["products"] });
       toast.success(editing ? "Изменения сохранены" : "Рецепт добавлен");
-      navigate(`/recipes/${recipe.id}`, { replace: true });
+      // Правка открыта с рецепта — возвращаемся на него же, не плодя записи в истории
+      if (editing) backToRecipe();
+      else navigate(`/recipes/${recipe.id}`, { replace: true });
     } catch (e) {
       toast.error((e as Error).message);
     } finally {
@@ -460,10 +472,8 @@ export default function RecipeEditPage() {
       }}
     >
       <div className="flex items-center gap-2">
-        <Button asChild variant="ghost" size="sm">
-          <Link to={editing ? `/recipes/${recipeId}` : "/"}>
-            <ArrowLeft /> Назад
-          </Link>
+        <Button type="button" variant="ghost" size="sm" onClick={leave}>
+          <ArrowLeft /> Назад
         </Button>
       </div>
       <h1 className="title-display text-3xl sm:text-4xl">{editing ? "Редактирование" : "Новый рецепт"}</h1>
@@ -478,7 +488,7 @@ export default function RecipeEditPage() {
               [
                 ["url", "По ссылке", Link2],
                 ["text", "Из текста", ClipboardPaste],
-                ["image", "Со скриншота", ScanText],
+                ["image", "Со скриншотов", ScanText],
               ] as const
             ).map(([mode, label, Icon]) => (
               <button
@@ -501,7 +511,7 @@ export default function RecipeEditPage() {
             {importMode === "text" &&
               "Вставьте рецепт из Telegram, заметок или сообщения — разберём на название, ингредиенты и шаги."}
             {importMode === "image" &&
-              "Скриншот или фото рецепта — распознаем текст и разберём его. Проверьте результат: распознавание бывает неточным."}
+              "Скриншоты или фото рецепта, до 10 штук — распознаем текст по порядку и разберём его. Проверьте результат: распознавание бывает неточным."}
           </p>
           {importMode === "text" && (
             <div className="mt-4 grid gap-2">
@@ -517,18 +527,82 @@ export default function RecipeEditPage() {
             </div>
           )}
           {importMode === "image" && (
-            <div className="mt-4">
-              <Button type="button" onClick={() => screenshotInput.current?.click()} disabled={importing}>
-                {importing ? <Loader2 className="animate-spin" /> : <Camera />} {importing ? "Распознаём…" : "Выбрать картинку"}
-              </Button>
+            <div className="mt-4 grid gap-3">
+              {shots.length > 0 && (
+                <ol className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none]">
+                  {shots.map((x, i) => (
+                    <li key={x.key} className="relative w-24 shrink-0 overflow-hidden rounded-xl border bg-muted">
+                      <img src={x.url} alt="" className="aspect-[9/16] w-full object-cover object-top" />
+                      <span className="absolute top-1 left-1 flex size-6 items-center justify-center rounded-full bg-foreground text-xs font-semibold text-background">
+                        {i + 1}
+                      </span>
+                      <button
+                        type="button"
+                        aria-label="Убрать"
+                        onClick={() => setShots((list) => list.filter((y) => y.key !== x.key))}
+                        className="absolute top-1 right-1 flex size-6 items-center justify-center rounded-full bg-background/85 backdrop-blur-md hover:text-destructive"
+                      >
+                        <X className="size-3.5" />
+                      </button>
+                      <div className="absolute inset-x-1 bottom-1 flex justify-between">
+                        <button
+                          type="button"
+                          aria-label="Раньше"
+                          disabled={i === 0}
+                          onClick={() => setShots((list) => move(list, i, i - 1))}
+                          className="flex size-6 items-center justify-center rounded-full bg-background/85 backdrop-blur-md disabled:opacity-0"
+                        >
+                          <ArrowLeft className="size-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Позже"
+                          disabled={i === shots.length - 1}
+                          onClick={() => setShots((list) => move(list, i, i + 1))}
+                          className="flex size-6 rotate-180 items-center justify-center rounded-full bg-background/85 backdrop-blur-md disabled:opacity-0"
+                        >
+                          <ArrowLeft className="size-3.5" />
+                        </button>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              )}
+              <div className="flex flex-wrap gap-2">
+                {shots.length < 10 && (
+                  <Button
+                    type="button"
+                    variant={shots.length ? "outline" : "default"}
+                    onClick={() => screenshotInput.current?.click()}
+                    disabled={importing}
+                  >
+                    <Camera /> {shots.length ? "Ещё картинки" : "Выбрать картинки"}
+                  </Button>
+                )}
+                {shots.length > 0 && (
+                  <Button type="button" onClick={() => runImport()} disabled={importing}>
+                    {importing ? <Loader2 className="animate-spin" /> : <ScanText />}
+                    {importing ? "Распознаём…" : shots.length > 1 ? `Распознать ${shots.length}` : "Распознать"}
+                  </Button>
+                )}
+              </div>
+              {shots.length > 1 && (
+                <p className="text-xs text-muted-foreground">
+                  Текст склеится в этом порядке, повтор на стыке скриншотов уберётся. Порядок меняется стрелками.
+                </p>
+              )}
               <input
                 ref={screenshotInput}
                 type="file"
                 accept="image/*"
+                multiple
                 hidden
                 onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) runImport(file);
+                  const picked = Array.from(e.target.files ?? []) as File[];
+                  if (picked.length)
+                    setShots((list) =>
+                      [...list, ...picked.map((file) => ({ key: key(), file, url: URL.createObjectURL(file) }))].slice(0, 10),
+                    );
                   e.target.value = "";
                 }}
               />
@@ -991,8 +1065,8 @@ export default function RecipeEditPage() {
       {/* Панель сохранения */}
       <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md">
         <div className="mx-auto flex max-w-3xl items-center justify-end gap-3 px-4 py-3">
-          <Button asChild type="button" variant="ghost">
-            <Link to={editing ? `/recipes/${recipeId}` : "/"}>Отмена</Link>
+          <Button type="button" variant="ghost" onClick={leave}>
+            Отмена
           </Button>
           <Button type="submit" size="lg" disabled={saving || uploading > 0}>
             {saving && <Loader2 className="animate-spin" />} {editing ? "Сохранить" : "Добавить рецепт"}

@@ -37,6 +37,7 @@ import { Tag } from "@/components/ui/chip";
 import { Switch } from "@/components/ui/switch";
 import { ApiError, api, type Ingredient } from "@/lib/api";
 import { DIFFICULTY, formatAmount, formatMinutes, plural } from "@/lib/format";
+import { fromRecipe, sectionPath, useBackToSection } from "@/lib/nav";
 import { useOfflineIds } from "@/lib/offline";
 import { getLastList, setLastList } from "@/lib/shoppingList";
 import { useWakeLock } from "@/lib/useWakeLock";
@@ -83,6 +84,7 @@ export default function RecipePage() {
   const recipeId = Number(id);
   const navigate = useNavigate();
   const queryClient = useQueryClient();
+  const back = useBackToSection();
   const query = useQuery({ queryKey: ["recipe", recipeId], queryFn: () => api.recipes.get(recipeId) });
   const recipe = query.data;
 
@@ -114,7 +116,7 @@ export default function RecipePage() {
       queryClient.invalidateQueries({ queryKey: ["categories"] });
       queryClient.invalidateQueries({ queryKey: ["tags"] });
       toast.success("Рецепт удалён");
-      navigate("/", { replace: true });
+      navigate(sectionPath(), { replace: true });
     },
     onError: (e) => toast.error(e.message),
   });
@@ -160,7 +162,7 @@ export default function RecipePage() {
       <div className="py-20 text-center">
         <h1 className="text-2xl font-bold">{notFound ? "Рецепт не найден" : "Не удалось загрузить рецепт"}</h1>
         <Button asChild variant="outline" className="mt-6">
-          <Link to="/">К рецептам</Link>
+          <Link to={sectionPath()}>К рецептам</Link>
         </Button>
       </div>
     );
@@ -182,7 +184,7 @@ export default function RecipePage() {
   return (
     <article className="mx-auto grid max-w-5xl gap-8">
       <div className="flex items-center justify-between gap-2 print:hidden">
-        <Button variant="ghost" size="sm" onClick={() => (history.length > 1 ? navigate(-1) : navigate("/"))}>
+        <Button variant="ghost" size="sm" onClick={back}>
           <ArrowLeft /> Назад
         </Button>
         <div className="flex items-center gap-2">
@@ -205,7 +207,7 @@ export default function RecipePage() {
         {recipe.can_edit && (
           <>
             <Button asChild variant="outline" size="sm" aria-label="Изменить">
-              <Link to={`/recipes/${recipe.id}/edit`}>
+              <Link to={`/recipes/${recipe.id}/edit`} state={fromRecipe}>
                 <Pencil /> <span className="hidden sm:inline">Изменить</span>
               </Link>
             </Button>
@@ -294,7 +296,7 @@ export default function RecipePage() {
           <div className="flex flex-wrap items-center gap-3">
             {recipe.steps.length > 0 && (
               <Button asChild size="lg" className="print:hidden">
-                <Link to={`/recipes/${recipe.id}/cook?servings=${servings}`}>
+                <Link to={`/recipes/${recipe.id}/cook?servings=${servings}`} state={fromRecipe}>
                   <ChefHat /> Начать готовить
                 </Link>
               </Button>

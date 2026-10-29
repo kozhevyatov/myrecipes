@@ -8,6 +8,7 @@ import { Brand } from "@/components/Logo";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { syncFavoritesOffline, useOnline } from "@/lib/offline";
+import { rememberSection } from "@/lib/nav";
 import { flush as flushShopping } from "@/lib/shoppingQueue";
 import { useSettings } from "@/lib/useSettings";
 import { useTheme } from "@/lib/theme";
@@ -34,6 +35,7 @@ export function Layout() {
 
   const location = useLocation();
   const online = useOnline();
+  useEffect(() => rememberSection(location.pathname, location.search), [location.pathname, location.search]);
 
   // Избранное — на устройство, чтобы открывалось без интернета
   useEffect(() => {

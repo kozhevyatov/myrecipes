@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Link, useNavigate, useParams, useSearchParams } from "react-router";
+import { useParams, useSearchParams } from "react-router";
+import { useBackToRecipe } from "@/lib/nav";
 import { useQuery } from "@tanstack/react-query";
 import { ArrowLeft, ArrowRight, Check, ListChecks, Loader2, PartyPopper, Sun, X } from "lucide-react";
 import { StepTimer } from "@/components/StepTimer";
@@ -16,7 +17,7 @@ import { cn } from "@/lib/utils";
 export default function CookPage() {
   const { id } = useParams();
   const recipeId = Number(id);
-  const navigate = useNavigate();
+  const back = useBackToRecipe(recipeId);
   const [params] = useSearchParams();
   const { data: recipe, isLoading } = useQuery({
     queryKey: ["recipe", recipeId],
@@ -42,11 +43,11 @@ export default function CookPage() {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "ArrowRight" || e.key === " ") go(1);
       else if (e.key === "ArrowLeft") go(-1);
-      else if (e.key === "Escape") navigate(`/recipes/${recipeId}`);
+      else if (e.key === "Escape") back();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [go, navigate, recipeId]);
+  }, [go, back]);
 
   useEffect(() => {
     if (recipe) document.title = `Готовим: ${recipe.title}`;
@@ -78,10 +79,8 @@ export default function CookPage() {
     >
       {/* Верхняя панель */}
       <header className="flex items-center gap-2 border-b px-3 py-2 pt-[max(0.5rem,env(safe-area-inset-top))]">
-        <Button variant="ghost" size="icon" asChild aria-label="Выйти из режима готовки">
-          <Link to={`/recipes/${recipe.id}`}>
-            <X />
-          </Link>
+        <Button variant="ghost" size="icon" aria-label="Выйти из режима готовки" onClick={back}>
+          <X />
         </Button>
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-bold">{recipe.title}</p>
@@ -115,9 +114,7 @@ export default function CookPage() {
               <Button variant="outline" onClick={() => setIndex(0)}>
                 С начала
               </Button>
-              <Button asChild>
-                <Link to={`/recipes/${recipe.id}`}>К рецепту</Link>
-              </Button>
+              <Button onClick={back}>К рецепту</Button>
             </div>
           </div>
         ) : (

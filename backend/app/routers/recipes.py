@@ -66,6 +66,8 @@ from ..security import get_current_user
 
 router = APIRouter(prefix="/api/recipes", tags=["recipes"])
 
+MAX_SCREENSHOTS = 10
+
 
 # ---------- доступ ----------
 def _visible(user: User):
@@ -663,18 +665,24 @@ def import_text(data: ImportTextIn, db: Session = Depends(get_db), _: User = Dep
 
 @router.post("/import-image", response_model=RecipeDraft)
 async def import_image(
-    file: UploadFile = File(...), db: Session = Depends(get_db), _: User = Depends(get_current_user)
+    files: list[UploadFile] = File(...), db: Session = Depends(get_db), _: User = Depends(get_current_user)
 ) -> RecipeDraft:
-    """Скриншот или фото рецепта: распознаём текст и разбираем как обычный текст."""
-    raw = await file.read(MAX_UPLOAD_BYTES + 1)
-    if len(raw) > MAX_UPLOAD_BYTES:
-        raise HTTPException(413, "Файл больше 15 МБ")
-    try:
-        text = await run_in_threadpool(textimport.ocr, raw)
-    except textimport.OcrError as e:
-        raise HTTPException(422, str(e))
+    """Скриншоты или фото рецепта (до 10, по порядку): распознаём текст каждого, склеиваем
+    и разбираем как обычный текст. Повтор на стыке соседних скриншотов убирается."""
+    if len(files) > MAX_SCREENSHOTS:
+        raise HTTPException(413, f"Не больше {MAX_SCREENSHOTS} картинок за раз")
+    texts: list[str] = []
+    for i, file in enumerate(files, 1):
+        raw = await file.read(MAX_UPLOAD_BYTES + 1)
+        if len(raw) > MAX_UPLOAD_BYTES:
+            raise HTTPException(413, f"Картинка {i} больше 15 МБ")
+        try:
+            texts.append(await run_in_threadpool(textimport.ocr, raw))
+        except textimport.OcrError as e:
+            raise HTTPException(422, f"Картинка {i}: {e}" if len(files) > 1 else str(e))
+    text = textimport.join_pages(texts)
     if len(text.strip()) < 10:
-        raise HTTPException(422, "На картинке не нашлось текста")
+        raise HTTPException(422, "На картинках не нашлось текста" if len(files) > 1 else "На картинке не нашлось текста")
     r = textimport.parse_text(text)
     return _draft(db, r, text=text)
 
