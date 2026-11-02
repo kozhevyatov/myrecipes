@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { useNavigate, useParams } from "react-router";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -343,6 +343,13 @@ export default function RecipeEditPage() {
         i === gi ? { ...g, items: g.items.map((it, j) => (j === ii ? { ...it, ...patch } : it)) } : g,
       ),
     }));
+  // Новый шаг в нужное место (между шагами или в конец) — и сразу курсор в него
+  const [focusStep, setFocusStep] = useState<string | null>(null);
+  const insertStep = (at: number) => {
+    const step = emptyStep();
+    setFocusStep(step.key);
+    setForm((f) => ({ ...f, steps: [...f.steps.slice(0, at), step, ...f.steps.slice(at)] }));
+  };
   const updateStep = (si: number, patch: Partial<StepRow>) =>
     setForm((f) => ({ ...f, steps: f.steps.map((s, i) => (i === si ? { ...s, ...patch } : s)) }));
 
@@ -968,15 +975,30 @@ export default function RecipeEditPage() {
 
       {/* Шаги */}
       <Section title="Приготовление" hint="Один шаг — одно действие. Можно указать таймер.">
-        <ol className="grid gap-4">
+        <ol className="grid gap-2">
           {form.steps.map((s, si) => (
-            <li key={s.key} className="flex gap-3">
+            <Fragment key={s.key}>
+            {si > 0 && (
+              <li className="flex items-center gap-2 pl-11">
+                <span className="h-px flex-1 border-t border-dashed" />
+                <button
+                  type="button"
+                  onClick={() => insertStep(si)}
+                  className="flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-semibold text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                >
+                  <Plus className="size-3.5" /> Вставить шаг
+                </button>
+                <span className="h-px flex-1 border-t border-dashed" />
+              </li>
+            )}
+            <li className="flex gap-3">
               <span className="mt-2 flex size-8 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-extrabold text-primary-foreground">
                 {si + 1}
               </span>
               <div className="grid flex-1 gap-2">
                 <Textarea
                   rows={3}
+                  autoFocus={s.key === focusStep}
                   placeholder={si === 0 ? "Например: нарежьте лук мелкими кубиками…" : "Что делаем дальше?"}
                   value={s.text}
                   onChange={(e) => updateStep(si, { text: e.target.value })}
@@ -999,7 +1021,8 @@ export default function RecipeEditPage() {
                     <Timer className="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
                     <Input
                       inputMode="numeric"
-                      placeholder="Таймер"
+                      placeholder="—"
+                      aria-label="Таймер, минут"
                       className="h-9 pr-11 pl-9"
                       value={s.timer}
                       onChange={(e) => updateStep(si, { timer: e.target.value.replace(/\D/g, "") })}
@@ -1049,6 +1072,7 @@ export default function RecipeEditPage() {
                 </div>
               </div>
             </li>
+            </Fragment>
           ))}
         </ol>
         <Button
@@ -1056,9 +1080,9 @@ export default function RecipeEditPage() {
           variant="ghost"
           size="sm"
           className="mt-3"
-          onClick={() => set("steps", [...form.steps, emptyStep()])}
+          onClick={() => insertStep(form.steps.length)}
         >
-          <Plus /> Шаг
+          <Plus /> Добавить шаг
         </Button>
       </Section>
 
