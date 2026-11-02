@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import delete, exists, func, or_, select
 from sqlalchemy.orm import Session
 
-from .. import importer
+from .. import importer, nutrition
 from ..db import get_db
 from ..images import image_url
 from ..models import Product, Recipe, ShoppingItem, ShoppingList, ShoppingListMember, User, utcnow
@@ -19,6 +19,8 @@ from ..schemas import (
     ShoppingItemUpdate,
     ShoppingListIn,
     ShoppingListOut,
+    ShoppingRecipeList,
+    ShoppingRecipeListOut,
     ShoppingMembersIn,
 )
 from ..security import get_current_user
@@ -73,6 +75,7 @@ def _list_out(db: Session, lst: ShoppingList, user: User) -> ShoppingListOut:
         is_owner=lst.owner_id == user.id,
         todo=todo,
         total=total,
+        recipe_id=lst.recipe_id,
     )
 
 
@@ -112,6 +115,21 @@ def _pretty(amount: float | None, unit: str) -> tuple[float | None, str]:
     return round(amount, 2), unit
 
 
+def _common_unit(a_amount: float | None, a_unit: str, b_amount: float | None, b_unit: str) -> str | None:
+    """Можно ли сложить два количества и в чём. В рецептах единицу часто забывают:
+    «Белый шоколад 110 г» + «Белый шоколад 160» — это граммы; «Яйца 2 шт» + «Яйца 1» — штуки."""
+    if a_unit == b_unit:
+        return a_unit
+    for amt, empty, other in ((a_amount, a_unit, b_unit), (b_amount, b_unit, a_unit)):
+        if empty or amt is None:
+            continue
+        if other in ("г", "мл") and amt >= 10:
+            return other
+        if other == "шт" and amt < 10:
+            return other
+    return None
+
+
 def _add(
     db: Session,
     lst: ShoppingList,
@@ -131,10 +149,27 @@ def _add(
         if not same:
             continue
         item_amount, item_unit = _base(item.amount, item.unit)
-        if item_unit != unit:
+        # «по вкусу» поглощается конкретным количеством: «соль по вкусу» + «соль 1 щепотка» = 1 щепотка
+        if unit == "по вкусу" or item_unit == "по вкусу":
+            if item_unit == "по вкусу" and unit != "по вкусу":
+                item.amount, item.unit = _pretty(amount, unit)
+            if note and note not in item.note:
+                item.note = ", ".join(x for x in (item.note, note) if x)[:300]
+            return True
+        add_amount = amount
+        common = _common_unit(item_amount, item_unit, amount, unit)
+        if common is None and product is not None and "г" in (item_unit, unit):
+            # «Молоко 50 г» + «Молоко 100 мл», «Сахар 100 г» + «Сахар 2 ст. л.» — переводим в граммы
+            # по плотности продукта из справочника
+            a = nutrition.grams(item_amount, item_unit, product)
+            b = nutrition.grams(amount, unit, product)
+            if a and b:
+                item_amount, add_amount, common = a, b, "г"
+        if common is None:
             continue
-        if item_amount is not None and amount is not None:
-            item_amount += amount
+        item_unit = common
+        if item_amount is not None and add_amount is not None:
+            item_amount += add_amount
         elif not (item_amount is None and amount is None):
             continue
         item.amount, item.unit = _pretty(item_amount, item_unit)
@@ -224,6 +259,47 @@ def set_members(
 @router.get("/lists/{list_id}/items", response_model=list[ShoppingItemOut])
 def list_items(list_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> list[ShoppingItem]:
     return _items(db, _get_list(db, list_id, user))
+
+
+@router.post("/recipe-list", response_model=ShoppingRecipeListOut)
+def recipe_list(data: ShoppingRecipeList, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> ShoppingRecipeListOut:
+    """«В список покупок» со страницы рецепта: у каждого пользователя свой список на рецепт.
+    Первый раз — создаётся список с названием рецепта, дальше — тот же список обновляется:
+    содержимое заменяется новым выбором, а то, что уже куплено, остаётся отмеченным."""
+    recipe: Recipe = _get_visible(db, data.recipe_id, user)
+    lst = db.scalar(
+        select(ShoppingList)
+        .where(ShoppingList.owner_id == user.id, ShoppingList.recipe_id == recipe.id)
+        .order_by(ShoppingList.id.desc())
+    )
+    created = lst is None
+    bought: set[str] = set()
+    if lst is None:
+        lst = ShoppingList(name=recipe.title[:100], owner_id=user.id, recipe_id=recipe.id)
+        db.add(lst)
+        db.flush()
+    else:
+        bought = {i.name.lower() for i in _items(db, lst) if i.checked}
+        db.execute(delete(ShoppingItem).where(ShoppingItem.list_id == lst.id))
+        db.flush()
+    factor = (data.servings or recipe.servings) / max(recipe.servings, 1)
+    wanted = set(data.ingredient_ids) if data.ingredient_ids is not None else None
+    with db.no_autoflush:
+        for ing in recipe.ingredients:
+            if wanted is not None and ing.id not in wanted:
+                continue
+            if _is_staple(ing.product.name):
+                continue
+            amount = ing.amount * factor if ing.amount is not None else None
+            _add(db, lst, user, ing.product.name, amount, ing.unit, ing.product, "")
+            db.flush()
+    for item in _items(db, lst):
+        if item.name.lower() in bought:
+            item.checked = True
+    _touch(lst)
+    db.commit()
+    db.refresh(lst)
+    return ShoppingRecipeListOut(shopping_list=_list_out(db, lst, user), created=created, items=_items(db, lst))
 
 
 @router.post("/lists/{list_id}/from-recipe", response_model=ShoppingAdded)

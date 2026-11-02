@@ -403,6 +403,7 @@ class ShoppingListOut(BaseModel):
     is_owner: bool
     todo: int
     total: int
+    recipe_id: int | None = None
 
 
 class ShoppingListIn(BaseModel):
@@ -422,6 +423,20 @@ class ShoppingFromRecipe(BaseModel):
     servings: int | None = Field(default=None, ge=1, le=100)
     # Если указано — добавить только эти ингредиенты
     ingredient_ids: list[int] | None = None
+
+
+class ShoppingRecipeList(BaseModel):
+    """Отдельный список для рецепта: создаётся при первом добавлении, потом обновляется."""
+
+    recipe_id: int
+    servings: int | None = Field(default=None, ge=1, le=100)
+    ingredient_ids: list[int] | None = None
+
+
+class ShoppingRecipeListOut(BaseModel):
+    shopping_list: ShoppingListOut
+    created: bool
+    items: list[ShoppingItemOut]
 
 
 class ShoppingFromProducts(BaseModel):

@@ -396,6 +396,7 @@ export type ShoppingList = {
   is_owner: boolean;
   todo: number;
   total: number;
+  recipe_id: number | null;
 };
 
 export type ShoppingItem = { id: number; name: string; amount: number | null; unit: string; note: string; checked: boolean };
@@ -562,6 +563,11 @@ export const api = {
     items: (listId: number) => request<ShoppingItem[]>(`/api/shopping/lists/${listId}/items`),
     fromRecipe: (listId: number, recipe_id: number, servings: number, ingredient_ids?: number[]) =>
       request<{ added: number; merged: number; items: ShoppingItem[] }>(`/api/shopping/lists/${listId}/from-recipe`, {
+        method: "POST",
+        body: json({ recipe_id, servings, ingredient_ids }),
+      }),
+    recipeList: (recipe_id: number, servings: number, ingredient_ids: number[]) =>
+      request<{ shopping_list: ShoppingList; created: boolean; items: ShoppingItem[] }>("/api/shopping/recipe-list", {
         method: "POST",
         body: json({ recipe_id, servings, ingredient_ids }),
       }),

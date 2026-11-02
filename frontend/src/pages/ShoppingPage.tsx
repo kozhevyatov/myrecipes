@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, CloudOff, Copy, Loader2, LogOut, Pencil, Plus, ShoppingBasket, Trash2, UserPlus, Users, X } from "lucide-react";
+import { Check, ChefHat, CloudOff, Copy, Loader2, LogOut, Pencil, Plus, ShoppingBasket, Trash2, UserPlus, Users, X } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/button";
@@ -266,6 +266,7 @@ export default function ShoppingPage() {
             )}
           >
             {l.members.length > 0 && <Users className="size-3.5 opacity-70" />}
+            {l.recipe_id !== null && <ChefHat className="size-3.5 opacity-70" />}
             {l.name}
             {l.todo > 0 && <span className="opacity-60 tabular-nums">{l.todo}</span>}
           </button>
@@ -308,7 +309,14 @@ export default function ShoppingPage() {
           {/* Шапка списка: название, участники, действия */}
           <div className="flex flex-wrap items-center gap-3">
             {renaming === null ? (
-              <h2 className="text-xl font-semibold">{active.name}</h2>
+              <div>
+                <h2 className="text-xl font-semibold">{active.name}</h2>
+                {active.recipe_id !== null && (
+                  <Link to={`/recipes/${active.recipe_id}`} className="text-xs font-semibold text-primary hover:underline">
+                    Список из рецепта — открыть рецепт
+                  </Link>
+                )}
+              </div>
             ) : (
               <form
                 className="flex items-center gap-1"

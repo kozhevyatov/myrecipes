@@ -33,6 +33,7 @@ from ..models import (
     RecipeIngredient,
     RecipePhoto,
     RecipeStep,
+    ShoppingList,
     Tag,
     User,
     recipe_tags,
@@ -533,6 +534,9 @@ def update_recipe(
 def delete_recipe(recipe_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> dict:
     recipe = _get_editable(db, recipe_id, user)
     images = recipe.image_names()
+    # Списки покупок рецепта остаются, просто больше не привязаны к нему
+    for lst in db.scalars(select(ShoppingList).where(ShoppingList.recipe_id == recipe.id)):
+        lst.recipe_id = None
     db.delete(recipe)
     db.commit()
     for name in images:

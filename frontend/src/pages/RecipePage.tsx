@@ -39,7 +39,7 @@ import { ApiError, api, type Ingredient } from "@/lib/api";
 import { DIFFICULTY, formatAmount, formatMinutes, plural } from "@/lib/format";
 import { fromRecipe, sectionPath, useBackToSection } from "@/lib/nav";
 import { useOfflineIds } from "@/lib/offline";
-import { getLastList, setLastList } from "@/lib/shoppingList";
+import { setLastList } from "@/lib/shoppingList";
 import { useWakeLock } from "@/lib/useWakeLock";
 import { cn } from "@/lib/utils";
 
@@ -126,25 +126,37 @@ export default function RecipePage() {
 
   // Отмеченные галочкой ингредиенты считаем «уже есть дома» и в покупки не добавляем
   const shoppingLists = useQuery({ queryKey: ["shopping-lists"], queryFn: api.shopping.lists });
-  const [targetList, setTargetList] = useState<number | null>(getLastList);
+  // По умолчанию — отдельный список этого рецепта (0); можно выбрать и обычный список
+  const [targetList, setTargetList] = useState<number>(0);
   const lists = shoppingLists.data ?? [];
-  const target = lists.find((l) => l.id === targetList) ?? lists[0];
+  const ownRecipeList = lists.find((l) => l.recipe_id === recipeId && l.is_owner);
+  const otherLists = lists.filter((l) => l.recipe_id === null);
+  const target = targetList ? otherLists.find((l) => l.id === targetList) : undefined;
   const toBuy = useMutation({
-    mutationFn: () => {
+    mutationFn: async () => {
       const ids = (recipe?.ingredients ?? []).map((i) => i.id!).filter((id) => !checked.has(id));
-      return api.shopping.fromRecipe(target!.id, recipeId, servings, ids);
+      if (target) {
+        const r = await api.shopping.fromRecipe(target.id, recipeId, servings, ids);
+        return { listId: target.id, name: target.name, items: r.items, created: false, merged: r.merged };
+      }
+      const r = await api.shopping.recipeList(recipeId, servings, ids);
+      return { listId: r.shopping_list.id, name: r.shopping_list.name, items: r.items, created: r.created, merged: 0 };
     },
     onSuccess: (r) => {
-      setLastList(target!.id);
-      queryClient.setQueryData(["shopping", target!.id], r.items);
+      setLastList(r.listId);
+      queryClient.setQueryData(["shopping", r.listId], r.items);
       queryClient.invalidateQueries({ queryKey: ["shopping-lists"] });
-      const parts: string[] = [];
-      if (r.added) parts.push(`добавлено ${r.added}`);
-      if (r.merged) parts.push(`сложено с уже имеющимися ${r.merged}`);
-      toast.success(lists.length > 1 ? `В списке «${target!.name}»` : "В списке покупок", {
-        description: parts.join(", ") || undefined,
-        action: { label: "Открыть", onClick: () => navigate("/shopping") },
-      });
+      toast.success(
+        target ? `Добавлено в «${r.name}»` : r.created ? `Создан список «${r.name}»` : `Список «${r.name}» обновлён`,
+        {
+          description: target
+            ? r.merged
+              ? `сложено с уже имеющимися: ${r.merged}`
+              : undefined
+            : `${r.items.length} ${plural(r.items.length, "продукт", "продукта", "продуктов")}`,
+          action: { label: "Открыть", onClick: () => navigate("/shopping") },
+        },
+      );
     },
     onError: (e) => toast.error(e.message),
   });
@@ -434,29 +446,26 @@ export default function RecipePage() {
               <Button
                 variant="secondary"
                 className="mt-5 w-full print:hidden"
-                disabled={toBuy.isPending || !target || checked.size >= recipe.ingredients.length}
+                disabled={toBuy.isPending || checked.size >= recipe.ingredients.length}
                 onClick={() => toBuy.mutate()}
               >
                 {toBuy.isPending ? <Loader2 className="animate-spin" /> : <ShoppingBasket />}
-                {checked.size > 0
-                  ? `В список покупок: ${recipe.ingredients.length - checked.size} из ${recipe.ingredients.length}`
-                  : "В список покупок"}
+                {(!target && ownRecipeList ? "Обновить список покупок" : "В список покупок") +
+                  (checked.size > 0 ? `: ${recipe.ingredients.length - checked.size} из ${recipe.ingredients.length}` : "")}
               </Button>
             )}
-            {lists.length > 1 && (
+            {recipe.ingredients.length > 0 && (
               <label className="mt-2 flex items-center justify-center gap-2 text-xs text-muted-foreground print:hidden">
-                в список
+                в
                 <select
-                  className="rounded-md border bg-card px-2 py-1 text-xs text-foreground"
-                  value={target?.id}
-                  onChange={(e) => {
-                    setTargetList(Number(e.target.value));
-                    setLastList(Number(e.target.value));
-                  }}
+                  className="max-w-[14rem] rounded-md border bg-card px-2 py-1 text-xs text-foreground"
+                  value={targetList}
+                  onChange={(e) => setTargetList(Number(e.target.value))}
                 >
-                  {lists.map((l) => (
+                  <option value={0}>{ownRecipeList ? `список «${ownRecipeList.name}»` : "отдельный список рецепта"}</option>
+                  {otherLists.map((l) => (
                     <option key={l.id} value={l.id}>
-                      {l.name}
+                      «{l.name}»
                     </option>
                   ))}
                 </select>
