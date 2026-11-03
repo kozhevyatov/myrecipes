@@ -95,7 +95,7 @@ export function CostCard({ cost, recipeId, servings }: { cost: RecipeCost; recip
         <p className="mt-3 text-sm text-muted-foreground">
           У продуктов этого рецепта ещё нет цен.{" "}
           <Link
-            to={`/products?q=${encodeURIComponent(cost.missing[0] ?? "")}`}
+            to={`/products?recipe=${recipeId}&only=no-price`}
             className="font-medium text-primary hover:underline"
           >
             Указать цены
@@ -128,7 +128,7 @@ export function CostCard({ cost, recipeId, servings }: { cost: RecipeCost; recip
           {cost.missing.slice(0, 4).join(", ")}
           {cost.missing.length > 4 && "…"}.{" "}
           <Link
-            to={`/products?q=${encodeURIComponent(cost.missing[0] ?? "")}`}
+            to={`/products?recipe=${recipeId}&only=no-price`}
             className="font-medium text-primary hover:underline"
           >
             Дополнить

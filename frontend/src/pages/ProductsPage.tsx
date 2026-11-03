@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useMemo, useState, type ChangeEvent } from "react";
-import { useSearchParams } from "react-router";
+import { Link, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ChevronDown, Copy, Loader2, Merge, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
@@ -345,14 +345,57 @@ export default function ProductsPage() {
   const queryClient = useQueryClient();
   const [params, setParams] = useSearchParams();
   const [q, setQ] = useState(params.get("q") ?? "");
-  const [filter, setFilter] = useState<"all" | "no-kbju" | "no-price">("all");
+  const only = params.get("only");
+  const [filter, setFilter] = useState<"all" | "no-kbju" | "no-price">(
+    only === "no-price" || only === "no-kbju" ? only : "all",
+  );
   const [open, setOpen] = useState<{ id: number; kind: "merge" | "price" } | null>(null);
-  const toggle = (id: number, kind: "merge" | "price") =>
+  // Продукты, с которыми работали на этой странице, не пропадают из фильтра «Без цены» сразу после ввода цены
+  const [touched, setTouched] = useState<Set<number>>(new Set());
+  const toggle = (id: number, kind: "merge" | "price") => {
+    setTouched((t) => new Set(t).add(id));
     setOpen(open?.id === id && open.kind === kind ? null : { id, kind });
+  };
   const catalog = useQuery({ queryKey: ["product-catalog"], queryFn: api.catalog.productCatalog });
 
+  // ?recipe=ID — только продукты одного рецепта (переход из карточки себестоимости или КБЖУ)
+  const recipeId = Number(params.get("recipe")) || null;
+  const recipe = useQuery({
+    queryKey: ["recipe", recipeId],
+    queryFn: () => api.recipes.get(recipeId!),
+    enabled: recipeId !== null,
+  });
+  const recipeNames = useMemo(
+    () => (recipe.data ? new Set(recipe.data.ingredients.map((i) => i.product.toLowerCase())) : null),
+    [recipe.data],
+  );
+  const showAll = () => {
+    setFilter("all");
+    setParams(
+      (prev) => {
+        const next = new URLSearchParams(prev);
+        next.delete("recipe");
+        next.delete("only");
+        return next;
+      },
+      { replace: true },
+    );
+  };
+
   useEffect(() => {
-    const t = setTimeout(() => setParams(q ? { q } : {}, { replace: true }), 300);
+    const t = setTimeout(
+      () =>
+        setParams(
+          (prev) => {
+            const next = new URLSearchParams(prev);
+            if (q) next.set("q", q);
+            else next.delete("q");
+            return next;
+          },
+          { replace: true },
+        ),
+      300,
+    );
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q]);
@@ -375,16 +418,20 @@ export default function ProductsPage() {
   });
 
   const all = catalog.data ?? [];
+  const scope = useMemo(
+    () => (recipeId === null ? all : recipeNames ? all.filter((p) => recipeNames.has(p.name.toLowerCase())) : []),
+    [all, recipeId, recipeNames],
+  );
   const list = useMemo(() => {
     const needle = q.trim().toLowerCase().replace(/ё/g, "е");
-    return all.filter(
+    return scope.filter(
       (p) =>
         (!needle || p.name.toLowerCase().replace(/ё/g, "е").includes(needle)) &&
-        (filter === "all" || (filter === "no-kbju" ? p.kcal === null : p.price === null)),
+        (filter === "all" || touched.has(p.id) || (filter === "no-kbju" ? p.kcal === null : p.price === null)),
     );
-  }, [all, q, filter]);
-  const emptyCount = all.filter((p) => p.kcal === null).length;
-  const noPriceCount = all.filter((p) => p.price === null).length;
+  }, [scope, q, filter, touched]);
+  const emptyCount = scope.filter((p) => p.kcal === null).length;
+  const noPriceCount = scope.filter((p) => p.price === null).length;
 
   return (
     <div className="grid gap-6">
@@ -408,7 +455,7 @@ export default function ProductsPage() {
         </div>
         <div className="flex gap-2">
           <Chip active={filter === "all"} onClick={() => setFilter("all")}>
-            Все {all.length}
+            Все {scope.length}
           </Chip>
           <Chip active={filter === "no-kbju"} onClick={() => setFilter("no-kbju")}>
             Без КБЖУ {emptyCount}
@@ -419,15 +466,37 @@ export default function ProductsPage() {
         </div>
       </div>
 
-      {user?.is_admin && <DuplicatesPanel />}
+      {recipeId !== null && (
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl bg-accent px-4 py-3 text-sm">
+          <span>
+            Продукты рецепта{" "}
+            {recipe.data ? (
+              <Link to={`/recipes/${recipeId}`} className="font-semibold hover:underline">
+                «{recipe.data.title}»
+              </Link>
+            ) : (
+              "…"
+            )}
+          </span>
+          <button className="font-medium text-primary hover:underline sm:ml-auto" onClick={showAll}>
+            Показать все продукты
+          </button>
+        </div>
+      )}
 
-      {catalog.isLoading ? (
+      {user?.is_admin && recipeId === null && <DuplicatesPanel />}
+
+      {catalog.isLoading || (recipeId !== null && recipe.isLoading) ? (
         <div className="flex justify-center py-16">
           <Loader2 className="size-6 animate-spin text-muted-foreground" />
         </div>
       ) : list.length === 0 ? (
         <p className="rounded-3xl bg-muted/60 px-6 py-14 text-center text-muted-foreground">
-          {all.length === 0 ? "Продукты появятся здесь, когда вы добавите первый рецепт." : "Ничего не нашлось."}
+          {all.length === 0
+            ? "Продукты появятся здесь, когда вы добавите первый рецепт."
+            : recipeId !== null && filter !== "all" && !q
+              ? `У всех продуктов рецепта ${filter === "no-price" ? "есть цены" : "заполнены КБЖУ"}.`
+              : "Ничего не нашлось."}
         </p>
       ) : (
         <div className="overflow-hidden rounded-3xl border bg-card">

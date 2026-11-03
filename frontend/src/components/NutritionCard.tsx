@@ -7,7 +7,21 @@ function fmt(n: number) {
 }
 
 /** КБЖУ на порцию. Значения примерные — по справочнику продуктов. */
-export function NutritionCard({ nutrition, servings, readOnly }: { nutrition: Nutrition; servings: number; readOnly?: boolean }) {
+export function NutritionCard({
+  nutrition,
+  servings,
+  readOnly,
+  recipeId,
+}: {
+  nutrition: Nutrition;
+  servings: number;
+  readOnly?: boolean;
+  recipeId?: number;
+}) {
+  // Ссылка на справочник: все продукты рецепта без КБЖУ, а не один первый
+  const fillLink = recipeId
+    ? `/products?recipe=${recipeId}&only=no-kbju`
+    : `/products?q=${encodeURIComponent(nutrition.missing[0] ?? "")}`;
   const v = nutrition.per_serving;
   const empty = nutrition.counted === 0;
 
@@ -25,7 +39,7 @@ export function NutritionCard({ nutrition, servings, readOnly }: { nutrition: Nu
       {empty ? (
         <p className="mt-3 text-sm text-muted-foreground">
           Для расчёта не хватает данных о продуктах.{" "}
-          <Link to="/products" className="font-medium text-primary hover:underline">
+          <Link to={fillLink} className="font-medium text-primary hover:underline">
             Заполнить в справочнике
           </Link>
         </p>
@@ -57,7 +71,7 @@ export function NutritionCard({ nutrition, servings, readOnly }: { nutrition: Nu
             ` и ещё ${nutrition.missing.length - 4} ${plural(nutrition.missing.length - 4, "продукт", "продукта", "продуктов")}`}
           .{" "}
           {!readOnly && (
-            <Link to={`/products?q=${encodeURIComponent(nutrition.missing[0])}`} className="font-medium text-primary hover:underline">
+            <Link to={fillLink} className="font-medium text-primary hover:underline">
             Дополнить
           </Link>
           )}

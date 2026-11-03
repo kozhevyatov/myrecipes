@@ -479,7 +479,7 @@ export default function RecipePage() {
               </p>
             )}
           </div>
-          {recipe.nutrition && <NutritionCard nutrition={recipe.nutrition} servings={recipe.servings} />}
+          {recipe.nutrition && <NutritionCard nutrition={recipe.nutrition} servings={recipe.servings} recipeId={recipe.id} />}
           {recipe.cost && <CostCard cost={recipe.cost} recipeId={recipe.id} servings={recipe.servings} />}
         </section>
 
