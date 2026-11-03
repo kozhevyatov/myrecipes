@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ChefHat, CloudOff, Copy, Loader2, LogOut, Pencil, Plus, ShoppingBasket, Tag, Trash2, UserPlus, Users, X } from "lucide-react";
+import { Check, ChefHat, CloudOff, Copy, Loader2, LogOut, Pencil, Plus, ShoppingBasket, Trash2, UserPlus, Users, X } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar } from "@/components/Avatar";
 import { PRICE_UNITS, PriceForm } from "@/components/PriceForm";
@@ -178,17 +178,26 @@ function Row({
           <button
             onClick={() => setEditing(!editing)}
             className={cn(
-              "rounded-md p-1.5 hover:opacity-100",
-              item.price ? "text-primary opacity-80" : "text-muted-foreground opacity-60 hover:text-foreground",
+              "inline-flex h-7 shrink-0 items-center gap-1 rounded-full px-2.5 text-xs font-medium whitespace-nowrap transition-colors",
+              item.price
+                ? "bg-accent text-accent-foreground hover:bg-accent/70"
+                : "border border-dashed border-input text-muted-foreground hover:border-primary hover:text-primary",
+              editing && "ring-2 ring-ring/40",
             )}
-            aria-label={`Цена: ${item.name}`}
+            aria-label={item.price ? `Изменить цену: ${item.name}` : `Указать цену: ${item.name}`}
             title={
               item.price
                 ? `${formatMoney(item.price.price)} за ${String(item.price.package_amount).replace(".", ",")} ${item.price.package_unit} — изменить`
                 : "Указать цену"
             }
           >
-            <Tag className="size-4" />
+            {item.price ? (
+              <span className="tabular-nums">{formatMoney(item.price.price)}</span>
+            ) : (
+              <>
+                <Plus className="size-3" /> цена
+              </>
+            )}
           </button>
         )}
         <button
