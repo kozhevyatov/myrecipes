@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..db import get_db
 from ..models import PantryItem, Product, User
+from ..productmatch import ProductMatcher, clean_name
 from ..nutrition import fill_from_seed
 from ..schemas import PantryAdd, PantryItemOut
 from ..security import get_current_user
@@ -32,9 +33,9 @@ def add_to_pantry(data: PantryAdd, db: Session = Depends(get_db), user: User = D
     """Добавить по названию. Незнакомый продукт попадёт в справочник."""
     name = " ".join(data.name.split())
     name = name[:1].upper() + name[1:]
-    product = db.scalar(select(Product).where(func.lower(Product.name) == name.lower()))
+    product = ProductMatcher(db).find(name)  # «Яйца» найдёт «Яйцо», «масло сливочное» — «Сливочное масло»
     if not product:
-        product = Product(name=name)
+        product = Product(name=clean_name(name)[:128])
         fill_from_seed(product)
         db.add(product)
         db.flush()

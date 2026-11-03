@@ -11,7 +11,9 @@ from sqlalchemy.orm import Session, noload
 
 from ..db import get_db
 from .. import importer, textimport
+from ..costing import naive_utc, recipe_cost, take_snapshot
 from ..nutrition import fill_from_seed, recipe_nutrition
+from ..productmatch import ProductMatcher, clean_name
 from ..images import (
     IMPORT_PREFIX,
     MAX_UPLOAD_BYTES,
@@ -30,6 +32,7 @@ from ..models import (
     PantryItem,
     Product,
     Recipe,
+    RecipeCostSnapshot,
     RecipeIngredient,
     RecipePhoto,
     RecipeStep,
@@ -44,6 +47,11 @@ from ..schemas import (
     CategoryRef,
     CookLogIn,
     CookLogOut,
+    CostDriver,
+    CostHistoryOut,
+    CostLineOut,
+    CostOut,
+    CostPoint,
     ImportIn,
     ImportTextIn,
     IngredientIn,
@@ -149,6 +157,22 @@ def _nutrition(r: Recipe) -> NutritionOut | None:
     return NutritionOut(per_serving=vals(s), total=vals(1), weight_g=round(n.weight), counted=n.counted, missing=n.missing)
 
 
+def _cost(r: Recipe) -> CostOut | None:
+    db = Session.object_session(r)
+    if not r.ingredients or db is None:
+        return None
+    c = recipe_cost(db, r)
+    return CostOut(
+        total=round(c.total, 2),
+        per_serving=round(c.total / max(r.servings, 1), 2),
+        counted=c.counted,
+        total_count=c.total_count,
+        lines=[CostLineOut(product_id=x.product_id, name=x.name, cost=round(x.cost, 2)) for x in c.lines],
+        missing=c.missing,
+        stale=c.stale,
+    )
+
+
 def _author(u: User) -> AuthorOut:
     return AuthorOut(id=u.id, name=u.display_name or u.username, avatar_url=image_url(u.avatar))
 
@@ -228,6 +252,7 @@ def _full(r: Recipe, user: User) -> RecipeOut:
         ],
         source_url=r.source_url,
         nutrition=_nutrition(r),
+        cost=_cost(r),
         prep_minutes=r.prep_minutes,
         cook_minutes=r.cook_minutes,
         ingredients=[
@@ -461,18 +486,20 @@ def _fill(db: Session, recipe: Recipe, data: RecipeIn) -> None:
         tags.append(tag)
     recipe.tags = tags
 
-    # Продукты: ищем без учёта регистра, новые добавляем в справочник
+    # Продукты: ищем по названию, синонимам и «ключу» (productmatch), новые добавляем в справочник
     products: dict[str, Product] = {}
+    matcher = ProductMatcher(db)
 
     def product_for(name: str) -> Product:
         key = name.lower()
         if key not in products:
-            found = db.scalar(select(Product).where(func.lower(Product.name) == key))
+            found = matcher.find(name)
             if not found:
-                found = Product(name=name)
+                found = Product(name=clean_name(name)[:128])  # без «- 100 г» и «(5 шт)» в названии
                 fill_from_seed(found)  # КБЖУ из встроенного справочника, если продукт известен
                 db.add(found)
                 db.flush()
+                matcher.remember(found)
             products[key] = found
         return products[key]
 
@@ -505,6 +532,57 @@ def _fill(db: Session, recipe: Recipe, data: RecipeIn) -> None:
         recipe.photos = [RecipePhoto(position=pos, image=n) for pos, n in enumerate(names)]
 
 
+@router.get("/{recipe_id}/cost-history", response_model=CostHistoryOut)
+def cost_history(
+    recipe_id: int,
+    days: int = Query(400, ge=1, le=3650),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> CostHistoryOut:
+    import json
+    from datetime import datetime, timezone
+
+    recipe = _get_visible(db, recipe_id, user)
+    since = datetime.now(timezone.utc).replace(tzinfo=None) - timedelta(days=days)
+    snaps = [
+        s
+        for s in db.scalars(
+            select(RecipeCostSnapshot)
+            .where(RecipeCostSnapshot.recipe_id == recipe.id)
+            .order_by(RecipeCostSnapshot.taken_at, RecipeCostSnapshot.id)
+        )
+        if naive_utc(s.taken_at) >= since
+    ]
+    out = CostHistoryOut(
+        points=[
+            CostPoint(
+                taken_at=s.taken_at,
+                total=s.total,
+                per_serving=s.per_serving,
+                priced_count=s.priced_count,
+                total_count=s.total_count,
+            )
+            for s in snaps
+        ]
+    )
+    if len(snaps) >= 2:
+        first, last = json.loads(snaps[0].lines_json or "{}"), json.loads(snaps[-1].lines_json or "{}")
+        common = first.keys() & last.keys()
+        before = sum(first[k] for k in common)
+        after = sum(last[k] for k in common)
+        if before > 0:
+            out.change_pct = round((after - before) / before * 100, 1)
+            out.since = snaps[0].taken_at
+            names = {i.product_id: i.product.name for i in recipe.ingredients}
+            moved = sorted(common, key=lambda k: -(last[k] - first[k]))
+            out.drivers = [
+                CostDriver(name=names.get(int(k), "?"), before=first[k], after=last[k])
+                for k in moved
+                if last[k] - first[k] >= 0.5 and int(k) in names
+            ][:3]
+    return out
+
+
 @router.post("", response_model=RecipeOut)
 def create_recipe(data: RecipeIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> RecipeOut:
     recipe = Recipe(author_id=user.id)
@@ -512,7 +590,17 @@ def create_recipe(data: RecipeIn, db: Session = Depends(get_db), user: User = De
     _apply(db, recipe, data)
     db.commit()
     db.refresh(recipe)
+    _snapshot(db, recipe)
     return _full(recipe, user)
+
+
+def _snapshot(db: Session, recipe: Recipe) -> None:
+    """Снимок себестоимости после изменения рецепта. Ошибка тут не должна мешать сохранению."""
+    try:
+        if take_snapshot(db, recipe):
+            db.commit()
+    except Exception:  # noqa: BLE001
+        db.rollback()
 
 
 @router.put("/{recipe_id}", response_model=RecipeOut)
@@ -524,6 +612,7 @@ def update_recipe(
     _apply(db, recipe, data)
     db.commit()
     db.refresh(recipe)
+    _snapshot(db, recipe)
     # Фото, которые убрали из рецепта, — удаляем с диска
     for name in before - recipe.image_names():
         delete_image(name)
@@ -626,6 +715,14 @@ def import_recipe(data: ImportIn, db: Session = Depends(get_db), _: User = Depen
 
 
 def _draft(db: Session, r: importer.ImportedRecipe, image_token: str | None = None, text: str = "") -> RecipeDraft:
+    # Названия продуктов сразу приводим к справочнику: «Сливочное масло 82%» → «Масло сливочное»,
+    # чтобы в редакторе было видно, с каким продуктом сопоставилось, ещё до сохранения
+    matcher = ProductMatcher(db)
+
+    def product_name(name: str) -> str:
+        found = matcher.find(name)
+        return found.name if found else clean_name(name)
+
     category = None
     if r.category:
         category = db.scalar(select(Category).where(func.lower(Category.name) == r.category.lower()))
@@ -642,7 +739,7 @@ def _draft(db: Session, r: importer.ImportedRecipe, image_token: str | None = No
         tags=r.tags,
         ingredients=[
             IngredientIn(
-                product=i.product[:128] or "?",
+                product=product_name(i.product)[:128] or "?",
                 amount=i.amount if i.amount is None or i.amount <= 1_000_000 else None,
                 unit=i.unit[:32],
                 note=i.note[:200],

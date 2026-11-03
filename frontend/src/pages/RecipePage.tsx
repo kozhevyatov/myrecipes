@@ -31,6 +31,7 @@ import { RecipeImage } from "@/components/RecipeCard";
 import { CookLog } from "@/components/CookLog";
 import { FavoriteButton } from "@/components/FavoriteButton";
 import { NutritionCard } from "@/components/NutritionCard";
+import { CostCard } from "@/components/CostCard";
 import { StepTimer } from "@/components/StepTimer";
 import { Button } from "@/components/ui/button";
 import { Tag } from "@/components/ui/chip";
@@ -479,6 +480,7 @@ export default function RecipePage() {
             )}
           </div>
           {recipe.nutrition && <NutritionCard nutrition={recipe.nutrition} servings={recipe.servings} />}
+          {recipe.cost && <CostCard cost={recipe.cost} recipeId={recipe.id} servings={recipe.servings} />}
         </section>
 
         {/* Шаги */}

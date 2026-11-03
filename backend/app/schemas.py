@@ -142,6 +142,19 @@ class CategoryIn(BaseModel):
     sort_order: int = 0
 
 
+class PriceOut(BaseModel):
+    id: int
+    price: float
+    package_amount: float
+    package_unit: str
+    created_at: datetime
+    # Цена за кг / л / шт — для сравнения упаковок
+    unit_price: float | None = None
+    unit_label: str | None = None
+    author: str | None = None
+    can_delete: bool = False
+
+
 class ProductOut(BaseModel):
     id: int
     name: str
@@ -153,6 +166,8 @@ class ProductOut(BaseModel):
     density: float | None
     nutrition_source: str | None
     recipe_count: int = 0
+    # Последняя цена
+    price: PriceOut | None = None
 
 
 class ProductUpdate(BaseModel):
@@ -167,6 +182,63 @@ class ProductUpdate(BaseModel):
 
 class ProductMerge(BaseModel):
     into_id: int
+
+
+class PriceIn(BaseModel):
+    price: float = Field(gt=0, le=1_000_000)
+    package_amount: float = Field(gt=0, le=1_000_000)
+    package_unit: Literal["г", "кг", "мл", "л", "шт"]
+
+
+class DuplicateProduct(BaseModel):
+    id: int
+    name: str
+    recipe_count: int
+    has_price: bool
+    # Совпадает по строгому ключу с первым в группе — почти наверняка дубль
+    exact: bool
+
+
+class DuplicateGroup(BaseModel):
+    products: list[DuplicateProduct]
+
+
+class CostLineOut(BaseModel):
+    product_id: int
+    name: str
+    cost: float
+
+
+class CostOut(BaseModel):
+    total: float
+    per_serving: float
+    counted: int
+    total_count: int
+    lines: list[CostLineOut]
+    missing: list[str]
+    stale: list[str]
+
+
+class CostPoint(BaseModel):
+    taken_at: datetime
+    total: float
+    per_serving: float
+    priced_count: int
+    total_count: int
+
+
+class CostDriver(BaseModel):
+    name: str
+    before: float
+    after: float
+
+
+class CostHistoryOut(BaseModel):
+    points: list[CostPoint]
+    # Рост «яблоки к яблокам»: только по продуктам, у которых цена была в обеих точках
+    change_pct: float | None = None
+    since: datetime | None = None
+    drivers: list[CostDriver] = []
 
 
 class NutritionValues(BaseModel):
@@ -329,6 +401,7 @@ class RecipeListItem(BaseModel):
 class RecipeOut(RecipeListItem):
     source_url: str | None
     nutrition: NutritionOut | None
+    cost: CostOut | None = None
     prep_minutes: int | None
     cook_minutes: int | None
     ingredients: list[IngredientOut]

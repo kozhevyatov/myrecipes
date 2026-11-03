@@ -52,3 +52,9 @@ export function formatAmount(value: number | null, unit: string): string {
 export const DIFFICULTY = ["", "Легко", "Средне", "Сложно"] as const;
 
 export const UNITS = ["г", "кг", "мл", "л", "шт", "ч. л.", "ст. л.", "стакан", "щепотка", "зубчик", "пучок", "по вкусу"];
+
+/** Деньги: 136,5 ₽ · 1 222 ₽ */
+export function formatMoney(value: number): string {
+  const digits = Math.abs(value) < 100 ? 1 : 0;
+  return `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: digits, minimumFractionDigits: 0 }).format(value)} ₽`;
+}

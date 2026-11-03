@@ -293,3 +293,45 @@ class PantryItem(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
     product: Mapped[Product] = relationship(lazy="joined")
+
+
+# ---------------- себестоимость и синонимы ----------------
+
+class ProductPrice(Base):
+    """Цена продукта: «220 ₽ за 180 г». История — каждая цена отдельной строкой."""
+
+    __tablename__ = "product_prices"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
+    price: Mapped[float] = mapped_column(Float)
+    package_amount: Mapped[float] = mapped_column(Float)
+    package_unit: Mapped[str] = mapped_column(String(16))  # г | кг | мл | л | шт
+    user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class RecipeCostSnapshot(Base):
+    """Снимок себестоимости рецепта на момент времени."""
+
+    __tablename__ = "recipe_cost_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    recipe_id: Mapped[int] = mapped_column(ForeignKey("recipes.id", ondelete="CASCADE"), index=True)
+    taken_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    total: Mapped[float] = mapped_column(Float)
+    per_serving: Mapped[float] = mapped_column(Float)
+    priced_count: Mapped[int] = mapped_column(Integer)
+    total_count: Mapped[int] = mapped_column(Integer)
+    lines_json: Mapped[str] = mapped_column(Text, default="{}")
+
+
+class ProductAlias(Base):
+    """Другое название продукта — запоминается при объединении дублей."""
+
+    __tablename__ = "product_aliases"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    alias: Mapped[str] = mapped_column(String(128), unique=True)  # в нижнем регистре
+    match_key: Mapped[str] = mapped_column(String(128), index=True)
+    product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)

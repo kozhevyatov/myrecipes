@@ -9,6 +9,7 @@ from .. import importer, nutrition
 from ..db import get_db
 from ..images import image_url
 from ..models import Product, Recipe, ShoppingItem, ShoppingList, ShoppingListMember, User, utcnow
+from ..productmatch import ProductMatcher
 from ..schemas import (
     AuthorOut,
     ShoppingAdded,
@@ -335,12 +336,13 @@ def add_products(
     """Список названий без количества — например, чего не хватает для рецепта."""
     lst = _get_list(db, list_id, user)
     added = merged = 0
+    matcher = ProductMatcher(db)
     with db.no_autoflush:
         for raw in dict.fromkeys(" ".join(n.split()) for n in data.names):
             if not raw:
                 continue
             name = raw[:200]
-            product = db.scalar(select(Product).where(func.lower(Product.name) == name.lower()))
+            product = matcher.find(name)
             # Уже есть в списке (с количеством или без) — второй строкой не добавляем
             existing = next(
                 (
@@ -374,7 +376,7 @@ def add_text(
     lst = _get_list(db, list_id, user)
     p = importer.parse_ingredient(data.text)
     name = p.product.strip() or data.text.strip()
-    product = db.scalar(select(Product).where(func.lower(Product.name) == name.lower()))
+    product = ProductMatcher(db).find(name)
     with db.no_autoflush:
         _add(db, lst, user, product.name if product else name, p.amount, p.unit if p.amount is not None else "", product, "")
     _touch(lst)

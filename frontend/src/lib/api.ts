@@ -118,13 +118,50 @@ export type Product = {
   density: number | null;
   nutrition_source: "auto" | "user" | null;
   recipe_count: number;
+  price: ProductPrice | null;
 };
 
-export type ProductPatch = Partial<Omit<Product, "id" | "nutrition_source" | "recipe_count">>;
+export type ProductPatch = Partial<Omit<Product, "id" | "nutrition_source" | "recipe_count" | "price">>;
+
+export type PriceUnit = "г" | "кг" | "мл" | "л" | "шт";
+export type ProductPrice = {
+  id: number;
+  price: number;
+  package_amount: number;
+  package_unit: PriceUnit;
+  created_at: string;
+  unit_price: number | null;
+  unit_label: "кг" | "л" | "шт" | null;
+  author: string | null;
+  can_delete: boolean;
+};
+export type PriceInput = { price: number; package_amount: number; package_unit: PriceUnit };
+
+export type DuplicateGroup = {
+  products: { id: number; name: string; recipe_count: number; has_price: boolean; exact: boolean }[];
+};
+
+export type RecipeCost = {
+  total: number;
+  per_serving: number;
+  counted: number;
+  total_count: number;
+  lines: { product_id: number; name: string; cost: number }[];
+  missing: string[];
+  stale: string[];
+};
+
+export type CostHistory = {
+  points: { taken_at: string; total: number; per_serving: number; priced_count: number; total_count: number }[];
+  change_pct: number | null;
+  since: string | null;
+  drivers: { name: string; before: number; after: number }[];
+};
 
 export type Recipe = RecipeListItem & {
   source_url: string | null;
   nutrition: Nutrition | null;
+  cost: RecipeCost | null;
   prep_minutes: number | null;
   cook_minutes: number | null;
   ingredients: Ingredient[];
@@ -456,6 +493,7 @@ export const api = {
       return request<{ items: RecipeListItem[]; total: number }>(`/api/recipes${query ? `?${query}` : ""}`);
     },
     get: (id: number) => request<Recipe>(`/api/recipes/${id}`),
+    costHistory: (id: number) => request<CostHistory>(`/api/recipes/${id}/cost-history`),
     create: (data: RecipeInput) => request<Recipe>("/api/recipes", { method: "POST", body: json(data) }),
     update: (id: number, data: RecipeInput) =>
       request<Recipe>(`/api/recipes/${id}`, { method: "PUT", body: json(data) }),
@@ -536,6 +574,11 @@ export const api = {
     mergeProduct: (id: number, intoId: number) =>
       request<Product>(`/api/products/${id}/merge`, { method: "POST", body: json({ into_id: intoId }) }),
     deleteProduct: (id: number) => request<{ ok: true }>(`/api/products/${id}`, { method: "DELETE" }),
+    productPrices: (id: number) => request<ProductPrice[]>(`/api/products/${id}/prices`),
+    addPrice: (id: number, data: PriceInput) =>
+      request<Product>(`/api/products/${id}/prices`, { method: "POST", body: json(data) }),
+    deletePrice: (priceId: number) => request<Product>(`/api/products/prices/${priceId}`, { method: "DELETE" }),
+    duplicates: () => request<DuplicateGroup[]>("/api/products/duplicates"),
   },
 
   me: {

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 import re
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI, HTTPException, Request
 from html import escape
@@ -14,7 +16,36 @@ from .config import UPLOAD_DIR, settings
 from .images import cleanup_import_images, ensure_thumbs
 from .routers import admin, auth, backup, catalog, pantry, plan, profile, public, recipes, setup, shopping
 
-VERSION = "0.7.0"
+VERSION = "0.8.0"
+
+
+SNAPSHOT_EVERY_SECONDS = 6 * 60 * 60
+
+
+def _snapshot_once() -> None:
+    from .costing import snapshot_all
+
+    if not db.is_configured():
+        return
+    session = next(db.get_db())
+    try:
+        n = snapshot_all(session)
+        if n:
+            logging.getLogger("uvicorn.error").info("Себестоимость: записано снимков — %s", n)
+    except Exception:  # noqa: BLE001
+        session.rollback()
+        logging.getLogger("uvicorn.error").exception("Не удалось записать снимки себестоимости")
+    finally:
+        session.close()
+
+
+async def _snapshot_loop() -> None:
+    """Плановые снимки себестоимости: раз в 6 часов, а новый снимок рецепта — не чаще раза в месяц,
+    если ничего не менялось. Изменения цен и рецептов снимаются сразу, без этой задачи."""
+    await asyncio.sleep(60)
+    while True:
+        await asyncio.to_thread(_snapshot_once)
+        await asyncio.sleep(SNAPSHOT_EVERY_SECONDS)
 
 
 @asynccontextmanager
@@ -22,7 +53,11 @@ async def lifespan(_: FastAPI):
     db.startup()
     cleanup_import_images()
     ensure_thumbs()
+    task = asyncio.create_task(_snapshot_loop())
     yield
+    task.cancel()
+    with suppress(asyncio.CancelledError):
+        await task
 
 
 class ImmutableStatic(StaticFiles):
