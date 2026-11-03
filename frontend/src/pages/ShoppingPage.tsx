@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, ChefHat, CloudOff, Copy, Loader2, LogOut, Pencil, Plus, ShoppingBasket, Trash2, UserPlus, Users, X } from "lucide-react";
+import { Check, ChefHat, CloudOff, Copy, Loader2, LogOut, Pencil, Plus, ShoppingBasket, Tag, Trash2, UserPlus, Users, X } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar } from "@/components/Avatar";
+import { PRICE_UNITS, PriceForm } from "@/components/PriceForm";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { api, type ShoppingItem, type ShoppingList } from "@/lib/api";
-import { formatAmount } from "@/lib/format";
+import { api, type PriceUnit, type ShoppingItem, type ShoppingList } from "@/lib/api";
+import { formatAmount, formatMoney } from "@/lib/format";
 import { getLastList, setLastList } from "@/lib/shoppingList";
 import { enqueue, onFlushed, overlay, pendingCount, tempId, useQueueVersion } from "@/lib/shoppingQueue";
 import { cn } from "@/lib/utils";
@@ -112,6 +113,16 @@ function ShareDialog({ list, onClose }: { list: ShoppingList; onClose: () => voi
 }
 
 // ---------- строка списка ----------
+/** Что подставить в форму цены: прошлую цену продукта, а если её нет — количество из списка. */
+function priceDefaults(item: ShoppingItem) {
+  if (item.price) return item.price;
+  const unit = item.unit === "зубчик" || item.unit === "" ? "шт" : item.unit;
+  if (item.amount && PRICE_UNITS.includes(unit as PriceUnit)) {
+    return { package_amount: item.amount, package_unit: unit as PriceUnit };
+  }
+  return undefined;
+}
+
 function Row({
   item,
   onToggle,
@@ -121,33 +132,88 @@ function Row({
   onToggle: (i: ShoppingItem) => void;
   onRemove: (id: number) => void;
 }) {
+  const queryClient = useQueryClient();
+  const [editing, setEditing] = useState(false);
+  const save = useMutation({
+    mutationFn: (data: Parameters<typeof api.shopping.setPrice>[1]) => api.shopping.setPrice(item.id, data),
+    onSuccess: (saved) => {
+      queryClient.invalidateQueries({ queryKey: ["shopping"] });
+      queryClient.invalidateQueries({ queryKey: ["product-catalog"] });
+      queryClient.invalidateQueries({ queryKey: ["product-prices"] });
+      queryClient.invalidateQueries({ queryKey: ["recipe"] });
+      queryClient.invalidateQueries({ queryKey: ["recipe-cost-history"] });
+      toast.success(`Цена «${saved.name}» сохранена`);
+      setEditing(false);
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   return (
-    <li className="group flex items-center gap-3 border-b px-4 last:border-b-0 sm:px-5">
-      <button onClick={() => onToggle(item)} className="flex min-h-14 flex-1 items-center gap-3.5 py-2 text-left" aria-pressed={item.checked}>
-        <span
-          className={cn(
-            "flex size-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
-            item.checked ? "border-success bg-success text-white" : "border-input group-hover:border-primary",
-          )}
+    <li className="group border-b last:border-b-0">
+      <div className="flex items-center gap-3 px-4 sm:px-5">
+        <button onClick={() => onToggle(item)} className="flex min-h-14 flex-1 items-center gap-3.5 py-2 text-left" aria-pressed={item.checked}>
+          <span
+            className={cn(
+              "flex size-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
+              item.checked ? "border-success bg-success text-white" : "border-input group-hover:border-primary",
+            )}
+          >
+            {item.checked && <Check className="size-3.5" strokeWidth={3} />}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className={cn("block text-[15px] font-medium", item.checked && "text-muted-foreground line-through")}>{item.name}</span>
+            {item.note && <span className="block truncate text-xs text-muted-foreground">{item.note}</span>}
+            {item.pending && <span className="block text-xs text-muted-foreground">ждёт отправки</span>}
+          </span>
+          <span className="shrink-0 text-right">
+            <span className={cn("block text-[15px] font-semibold tabular-nums", item.checked && "text-muted-foreground")}>
+              {amountText(item)}
+            </span>
+            {item.est_cost != null && item.est_cost > 0 && (
+              <span className="block text-xs text-muted-foreground tabular-nums">≈ {formatMoney(item.est_cost)}</span>
+            )}
+          </span>
+        </button>
+        {!item.pending && (
+          <button
+            onClick={() => setEditing(!editing)}
+            className={cn(
+              "rounded-md p-1.5 hover:opacity-100",
+              item.price ? "text-primary opacity-80" : "text-muted-foreground opacity-60 hover:text-foreground",
+            )}
+            aria-label={`Цена: ${item.name}`}
+            title={
+              item.price
+                ? `${formatMoney(item.price.price)} за ${String(item.price.package_amount).replace(".", ",")} ${item.price.package_unit} — изменить`
+                : "Указать цену"
+            }
+          >
+            <Tag className="size-4" />
+          </button>
+        )}
+        <button
+          onClick={() => onRemove(item.id)}
+          className="rounded-md p-1.5 text-muted-foreground opacity-60 hover:text-destructive hover:opacity-100"
+          aria-label={`Удалить ${item.name}`}
         >
-          {item.checked && <Check className="size-3.5" strokeWidth={3} />}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className={cn("block text-[15px] font-medium", item.checked && "text-muted-foreground line-through")}>{item.name}</span>
-          {item.note && <span className="block truncate text-xs text-muted-foreground">{item.note}</span>}
-          {item.pending && <span className="block text-xs text-muted-foreground">ждёт отправки</span>}
-        </span>
-        <span className={cn("shrink-0 text-[15px] font-semibold tabular-nums", item.checked && "text-muted-foreground")}>
-          {amountText(item)}
-        </span>
-      </button>
-      <button
-        onClick={() => onRemove(item.id)}
-        className="rounded-md p-1.5 text-muted-foreground opacity-60 hover:text-destructive hover:opacity-100"
-        aria-label={`Удалить ${item.name}`}
-      >
-        <X className="size-4" />
-      </button>
+          <X className="size-4" />
+        </button>
+      </div>
+      {editing && (
+        <div className="grid gap-2 bg-muted/50 px-4 py-3 sm:px-5">
+          <p className="text-xs text-muted-foreground">
+            {item.price
+              ? `Прошлая цена от ${new Date(item.price.created_at).toLocaleDateString("ru-RU", { day: "numeric", month: "long" })} — поправьте, если изменилась`
+              : "Цена с ценника — сохранится в справочнике и пересчитает себестоимость рецептов"}
+          </p>
+          <PriceForm
+            initial={priceDefaults(item)}
+            pending={save.isPending}
+            onSubmit={(data) => save.mutate(data)}
+            onCancel={() => setEditing(false)}
+          />
+        </div>
+      )}
     </li>
   );
 }
@@ -232,6 +298,10 @@ export default function ShoppingPage() {
   const pending = listId ? pendingCount(listId) : 0;
   const todo = data.filter((i) => !i.checked);
   const done = data.filter((i) => i.checked);
+  const sumCost = (items: ShoppingItem[]) => items.reduce((acc, i) => acc + (i.est_cost ?? 0), 0);
+  const todoCost = sumCost(todo);
+  const todoNoPrice = todo.filter((i) => i.est_cost == null).length;
+  const doneCost = sumCost(done);
   const people = active ? [active.owner, ...active.members] : [];
   const shared = people.length > 1;
 
@@ -417,6 +487,12 @@ export default function ShoppingPage() {
         </div>
       ) : (
         <>
+          {todo.length > 0 && todoCost > 0 && (
+            <p className="-mb-3 px-1 text-sm text-muted-foreground">
+              Осталось купить примерно на <span className="font-semibold text-foreground tabular-nums">{formatMoney(todoCost)}</span>
+              {todoNoPrice > 0 && ` · без цены: ${todoNoPrice}`}
+            </p>
+          )}
           {todo.length > 0 ? (
             <ul className="overflow-hidden rounded-3xl border bg-card">
               {todo.map((i) => (
@@ -430,7 +506,10 @@ export default function ShoppingPage() {
           {done.length > 0 && (
             <section className="grid gap-3">
               <div className="flex items-center justify-between">
-                <h2 className="text-sm font-semibold text-muted-foreground">Куплено: {done.length}</h2>
+                <h2 className="text-sm font-semibold text-muted-foreground">
+                  Куплено: {done.length}
+                  {doneCost > 0 && <span className="font-normal tabular-nums"> · ≈ {formatMoney(doneCost)}</span>}
+                </h2>
                 <Button variant="ghost" size="sm" onClick={() => clearItems(true)}>
                   <Trash2 /> Очистить купленное
                 </Button>

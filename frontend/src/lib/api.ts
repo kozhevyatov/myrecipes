@@ -436,7 +436,18 @@ export type ShoppingList = {
   recipe_id: number | null;
 };
 
-export type ShoppingItem = { id: number; name: string; amount: number | null; unit: string; note: string; checked: boolean };
+export type ShoppingItem = {
+  id: number;
+  name: string;
+  amount: number | null;
+  unit: string;
+  note: string;
+  checked: boolean;
+  // Последняя цена продукта и примерная стоимость пункта (у ещё не отправленных пунктов их нет)
+  product_id?: number | null;
+  price?: ProductPrice | null;
+  est_cost?: number | null;
+};
 
 export type RestoreResult = { created: number; skipped: number; failed: number; errors: string[] };
 
@@ -604,6 +615,8 @@ export const api = {
     setMembers: (id: number, user_ids: number[]) =>
       request<ShoppingList>(`/api/shopping/lists/${id}/members`, { method: "PUT", body: json({ user_ids }) }),
     items: (listId: number) => request<ShoppingItem[]>(`/api/shopping/lists/${listId}/items`),
+    setPrice: (itemId: number, data: PriceInput) =>
+      request<ShoppingItem>(`/api/shopping/items/${itemId}/price`, { method: "POST", body: json(data) }),
     fromRecipe: (listId: number, recipe_id: number, servings: number, ingredient_ids?: number[]) =>
       request<{ added: number; merged: number; items: ShoppingItem[] }>(`/api/shopping/lists/${listId}/from-recipe`, {
         method: "POST",

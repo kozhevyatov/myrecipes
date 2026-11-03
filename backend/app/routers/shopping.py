@@ -8,14 +8,17 @@ from sqlalchemy.orm import Session
 from .. import importer, nutrition
 from ..db import get_db
 from ..images import image_url
-from ..models import Product, Recipe, ShoppingItem, ShoppingList, ShoppingListMember, User, utcnow
-from ..productmatch import ProductMatcher
+from ..models import Product, ProductPrice, Recipe, ShoppingItem, ShoppingList, ShoppingListMember, User, utcnow
+from ..costing import ingredient_cost, latest_prices, snapshot_recipes_with_product
+from ..nutrition import fill_from_seed
+from ..productmatch import ProductMatcher, clean_name
 from ..schemas import (
     AuthorOut,
     ShoppingAdded,
     ShoppingAddText,
     ShoppingFromProducts,
     ShoppingFromRecipe,
+    PriceIn,
     ShoppingItemOut,
     ShoppingItemUpdate,
     ShoppingListIn,
@@ -88,6 +91,31 @@ def _items(db: Session, lst: ShoppingList) -> list[ShoppingItem]:
             .order_by(ShoppingItem.checked, ShoppingItem.created_at, ShoppingItem.id)
         )
     )
+
+
+def _out(db: Session, items: list[ShoppingItem]) -> list[ShoppingItemOut]:
+    """Пункты с последней ценой продукта и примерной стоимостью."""
+    from .catalog import _price_out
+
+    ids = [i.product_id for i in items if i.product_id]
+    prices = latest_prices(db, ids)
+    products = {p.id: p for p in db.scalars(select(Product).where(Product.id.in_(ids)))} if ids else {}
+    result = []
+    for i in items:
+        out = ShoppingItemOut.model_validate(i)
+        price = prices.get(i.product_id) if i.product_id else None
+        product = products.get(i.product_id) if i.product_id else None
+        if price and product:
+            out.price = _price_out(price, product)
+            if i.amount is not None:
+                cost = ingredient_cost(i.amount, i.unit, product, price)
+                out.est_cost = round(cost, 2) if cost is not None else None
+        result.append(out)
+    return result
+
+
+def _items_out(db: Session, lst: ShoppingList) -> list[ShoppingItemOut]:
+    return _out(db, _items(db, lst))
 
 
 def _touch(lst: ShoppingList) -> None:
@@ -258,8 +286,8 @@ def set_members(
 
 # ---------- пункты ----------
 @router.get("/lists/{list_id}/items", response_model=list[ShoppingItemOut])
-def list_items(list_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> list[ShoppingItem]:
-    return _items(db, _get_list(db, list_id, user))
+def list_items(list_id: int, db: Session = Depends(get_db), user: User = Depends(get_current_user)) -> list[ShoppingItemOut]:
+    return _items_out(db, _get_list(db, list_id, user))
 
 
 @router.post("/recipe-list", response_model=ShoppingRecipeListOut)
@@ -300,7 +328,7 @@ def recipe_list(data: ShoppingRecipeList, db: Session = Depends(get_db), user: U
     _touch(lst)
     db.commit()
     db.refresh(lst)
-    return ShoppingRecipeListOut(shopping_list=_list_out(db, lst, user), created=created, items=_items(db, lst))
+    return ShoppingRecipeListOut(shopping_list=_list_out(db, lst, user), created=created, items=_items_out(db, lst))
 
 
 @router.post("/lists/{list_id}/from-recipe", response_model=ShoppingAdded)
@@ -326,7 +354,7 @@ def add_from_recipe(
             db.flush()
     _touch(lst)
     db.commit()
-    return ShoppingAdded(added=added, merged=merged, items=_items(db, lst))
+    return ShoppingAdded(added=added, merged=merged, items=_items_out(db, lst))
 
 
 @router.post("/lists/{list_id}/from-products", response_model=ShoppingAdded)
@@ -365,7 +393,7 @@ def add_products(
             db.flush()
     _touch(lst)
     db.commit()
-    return ShoppingAdded(added=added, merged=merged, items=_items(db, lst))
+    return ShoppingAdded(added=added, merged=merged, items=_items_out(db, lst))
 
 
 @router.post("/lists/{list_id}/items", response_model=list[ShoppingItemOut])
@@ -381,7 +409,7 @@ def add_text(
         _add(db, lst, user, product.name if product else name, p.amount, p.unit if p.amount is not None else "", product, "")
     _touch(lst)
     db.commit()
-    return _items(db, lst)
+    return _items_out(db, lst)
 
 
 def _item(db: Session, item_id: int, user: User) -> ShoppingItem:
@@ -395,12 +423,43 @@ def _item(db: Session, item_id: int, user: User) -> ShoppingItem:
 @router.patch("/items/{item_id}", response_model=ShoppingItemOut)
 def update_item(
     item_id: int, data: ShoppingItemUpdate, db: Session = Depends(get_db), user: User = Depends(get_current_user)
-) -> ShoppingItem:
+) -> ShoppingItemOut:
     item = _item(db, item_id, user)
     for key, value in data.model_dump(exclude_unset=True).items():
         setattr(item, key, value)
     db.commit()
-    return item
+    return _out(db, [item])[0]
+
+
+@router.post("/items/{item_id}/price", response_model=ShoppingItemOut)
+def set_item_price(
+    item_id: int, data: PriceIn, db: Session = Depends(get_db), user: User = Depends(get_current_user)
+) -> ShoppingItemOut:
+    """Цена прямо из магазина: попадает в историю цен продукта и пересчитывает себестоимость рецептов.
+    Пункт без продукта («хлеб», добавлен текстом) связывается с продуктом из справочника или создаёт его."""
+    item = _item(db, item_id, user)
+    product = db.get(Product, item.product_id) if item.product_id else None
+    if product is None:
+        product = ProductMatcher(db).find(item.name)
+    if product is None:
+        product = Product(name=clean_name(item.name)[:128])
+        fill_from_seed(product)
+        db.add(product)
+        db.flush()
+    item.product_id = product.id
+    db.add(
+        ProductPrice(
+            product_id=product.id,
+            price=round(data.price, 2),
+            package_amount=data.package_amount,
+            package_unit=data.package_unit,
+            user_id=user.id,
+        )
+    )
+    db.flush()
+    snapshot_recipes_with_product(db, product.id)
+    db.commit()
+    return _out(db, [item])[0]
 
 
 @router.delete("/items/{item_id}")
@@ -420,4 +479,4 @@ def clear(
         q = q.where(ShoppingItem.checked.is_(True))
     db.execute(q)
     db.commit()
-    return _items(db, lst)
+    return _items_out(db, lst)

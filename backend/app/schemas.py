@@ -466,6 +466,10 @@ class ShoppingItemOut(BaseModel):
     unit: str
     note: str
     checked: bool
+    product_id: int | None = None
+    # Последняя цена продукта и примерная стоимость пункта по ней
+    price: PriceOut | None = None
+    est_cost: float | None = None
 
 
 class ShoppingListOut(BaseModel):
