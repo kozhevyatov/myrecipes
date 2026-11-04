@@ -16,8 +16,10 @@
     <script>
       try {
         var t = localStorage.getItem("theme");
-        if (t === "dark" || (!t && matchMedia("(prefers-color-scheme: dark)").matches))
-          document.documentElement.classList.add("dark");
+        if (!t) t = matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+        var c = document.documentElement.classList;
+        if (t === "dark" || t === "plum" || t === "basil") c.add("dark");
+        if (t !== "light" && t !== "dark") c.add("theme-" + t);
       } catch (e) {}
     </script>
   </head>

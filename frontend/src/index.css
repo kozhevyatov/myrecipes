@@ -53,6 +53,94 @@
   --ring: oklch(0.7 0.15 42 / 0.5);
 }
 
+/* «Голубика» — светлая холодная: молочно-голубой фон, черничный акцент, розовая подсветка */
+:root.theme-blueberry {
+  --background: oklch(0.982 0.006 260);
+  --foreground: oklch(0.22 0.022 265);
+  --card: oklch(1 0 0);
+  --muted: oklch(0.955 0.01 260);
+  --muted-foreground: oklch(0.52 0.025 262);
+  --primary: oklch(0.52 0.16 270);
+  --primary-foreground: oklch(0.99 0.005 260);
+  --secondary: oklch(0.945 0.014 260);
+  --secondary-foreground: oklch(0.28 0.022 265);
+  --accent: oklch(0.95 0.028 270);
+  --accent-foreground: oklch(0.4 0.13 270);
+  --highlight: oklch(0.86 0.1 350);
+  --highlight-foreground: oklch(0.3 0.07 350);
+  --destructive: oklch(0.58 0.2 27);
+  --success: oklch(0.6 0.12 155);
+  --border: oklch(0.91 0.014 260);
+  --input: oklch(0.885 0.016 260);
+  --ring: oklch(0.52 0.16 270 / 0.4);
+}
+
+/* «Слива» — тёмная ягодная: баклажановый фон, малиновый акцент, янтарная подсветка */
+:root.dark.theme-plum {
+  --background: oklch(0.2 0.022 335);
+  --foreground: oklch(0.95 0.01 345);
+  --card: oklch(0.24 0.028 335);
+  --muted: oklch(0.27 0.028 335);
+  --muted-foreground: oklch(0.73 0.03 340);
+  --primary: oklch(0.73 0.14 358);
+  --primary-foreground: oklch(0.18 0.025 335);
+  --secondary: oklch(0.29 0.03 335);
+  --secondary-foreground: oklch(0.92 0.012 345);
+  --accent: oklch(0.32 0.055 350);
+  --accent-foreground: oklch(0.92 0.045 355);
+  --highlight: oklch(0.82 0.12 78);
+  --highlight-foreground: oklch(0.22 0.04 70);
+  --destructive: oklch(0.67 0.19 27);
+  --success: oklch(0.72 0.12 160);
+  --border: oklch(0.32 0.028 335);
+  --input: oklch(0.36 0.03 335);
+  --ring: oklch(0.73 0.14 358 / 0.5);
+}
+
+/* «Розмарин» — светлая: шалфейно-молочный фон, глубокий тёмно-зелёный акцент, янтарная подсветка */
+:root.theme-rosemary {
+  --background: oklch(0.982 0.007 125);
+  --foreground: oklch(0.22 0.02 160);
+  --card: oklch(0.997 0.003 120);
+  --muted: oklch(0.955 0.012 135);
+  --muted-foreground: oklch(0.5 0.025 155);
+  --primary: oklch(0.46 0.09 158);
+  --primary-foreground: oklch(0.985 0.008 120);
+  --secondary: oklch(0.945 0.016 140);
+  --secondary-foreground: oklch(0.27 0.03 160);
+  --accent: oklch(0.94 0.03 150);
+  --accent-foreground: oklch(0.36 0.08 158);
+  --highlight: oklch(0.86 0.12 85);
+  --highlight-foreground: oklch(0.28 0.05 70);
+  --destructive: oklch(0.57 0.2 27);
+  --success: oklch(0.55 0.12 150);
+  --border: oklch(0.905 0.016 140);
+  --input: oklch(0.88 0.02 140);
+  --ring: oklch(0.46 0.09 158 / 0.4);
+}
+
+/* «Базилик» — тёмная хвойная: глубокий тёмно-зелёный фон, светло-зелёный акцент, янтарная подсветка */
+:root.dark.theme-basil {
+  --background: oklch(0.2 0.022 160);
+  --foreground: oklch(0.95 0.012 140);
+  --card: oklch(0.24 0.026 160);
+  --muted: oklch(0.27 0.026 160);
+  --muted-foreground: oklch(0.73 0.03 150);
+  --primary: oklch(0.76 0.12 152);
+  --primary-foreground: oklch(0.18 0.025 160);
+  --secondary: oklch(0.29 0.028 160);
+  --secondary-foreground: oklch(0.92 0.014 140);
+  --accent: oklch(0.31 0.045 158);
+  --accent-foreground: oklch(0.92 0.05 150);
+  --highlight: oklch(0.82 0.12 82);
+  --highlight-foreground: oklch(0.22 0.04 70);
+  --destructive: oklch(0.67 0.19 27);
+  --success: oklch(0.76 0.12 150);
+  --border: oklch(0.32 0.026 160);
+  --input: oklch(0.36 0.03 160);
+  --ring: oklch(0.76 0.12 152 / 0.5);
+}
+
 @theme inline {
   --font-sans: "Onest Variable", ui-sans-serif, system-ui, sans-serif;
   --font-display: "Unbounded Variable", "Onest Variable", ui-sans-serif, system-ui, sans-serif;
@@ -137,7 +225,11 @@
     margin: 14mm 12mm;
   }
   :root,
-  .dark {
+  .dark,
+  :root.theme-blueberry,
+  :root.dark.theme-plum,
+  :root.theme-rosemary,
+  :root.dark.theme-basil {
     --background: #fff;
     --card: #fff;
     --foreground: #111;

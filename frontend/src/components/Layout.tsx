@@ -1,17 +1,17 @@
 import { useEffect } from "react";
 import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
-import { BookOpen, CalendarDays, Carrot, CloudOff, LogOut, Moon, Settings, ShoppingBasket, Sun } from "lucide-react";
+import { BookOpen, CalendarDays, Carrot, CloudOff, LogOut, Settings, ShoppingBasket } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar } from "@/components/Avatar";
 import { Brand } from "@/components/Logo";
+import { ThemeMenu } from "@/components/ThemeMenu";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { syncFavoritesOffline, useOnline } from "@/lib/offline";
 import { rememberSection } from "@/lib/nav";
 import { flush as flushShopping } from "@/lib/shoppingQueue";
 import { useSettings } from "@/lib/useSettings";
-import { useTheme } from "@/lib/theme";
 import { cn } from "@/lib/utils";
 
 const tabClass = ({ isActive }: { isActive: boolean }) =>
@@ -29,7 +29,6 @@ const navClass = ({ isActive }: { isActive: boolean }) =>
 export function Layout() {
   const { user, logout } = useAuth();
   const { data: settings } = useSettings();
-  const { theme, toggle } = useTheme();
   const navigate = useNavigate();
   const siteName = settings?.site_name ?? "Мои рецепты";
 
@@ -78,9 +77,7 @@ export function Layout() {
           </nav>
 
           <div className="ml-auto flex items-center gap-1">
-            <Button variant="ghost" size="icon" onClick={toggle} aria-label="Сменить тему">
-              {theme === "dark" ? <Sun /> : <Moon />}
-            </Button>
+            <ThemeMenu />
             {user && (
               <>
                 <Link
