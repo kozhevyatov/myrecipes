@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useState, type ChangeEvent } from "react";
 import { Link, useSearchParams } from "react-router";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ChevronDown, Copy, Loader2, Merge, Search, Trash2, X } from "lucide-react";
+import { Check, ChevronDown, Copy, Loader2, Merge, Search, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
@@ -131,31 +131,53 @@ function PriceRow({ product, onDone }: { product: Product; onDone: () => void })
   return (
     <div className="grid gap-3 rounded-xl bg-muted/60 p-3 text-sm">
       <form
-        className="flex flex-wrap items-center gap-2"
+        className="flex items-start gap-2"
         onSubmit={(e) => {
           e.preventDefault();
           if (valid) add.mutate();
         }}
       >
-        <span>Цена на ценнике:</span>
-        <Input className="h-9 w-24 text-right" inputMode="decimal" placeholder="220" value={price} onChange={decimal(setPrice)} autoFocus />
-        <span>₽ за</span>
-        <Input className="h-9 w-20 text-right" inputMode="decimal" placeholder="180" value={amount} onChange={decimal(setAmount)} />
-        <div className="w-20">
-          <Select className="h-9" value={unit} onChange={(e) => setUnit(e.target.value as PriceUnit)}>
-            {PRICE_UNITS.map((u) => (
-              <option key={u} value={u}>
-                {u}
-              </option>
-            ))}
-          </Select>
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <span>Цена на ценнике:</span>
+          <Input className="h-9 w-24 text-right" inputMode="decimal" placeholder="220" value={price} onChange={decimal(setPrice)} autoFocus />
+          <span>₽ за</span>
+          <Input className="h-9 w-20 text-right" inputMode="decimal" placeholder="180" value={amount} onChange={decimal(setAmount)} />
+          <div className="w-20">
+            <Select className="h-9" value={unit} onChange={(e) => setUnit(e.target.value as PriceUnit)}>
+              {PRICE_UNITS.map((u) => (
+                <option key={u} value={u}>
+                  {u}
+                </option>
+              ))}
+            </Select>
+          </div>
         </div>
-        <Button size="sm" type="submit" disabled={!valid || add.isPending}>
-          Сохранить
-        </Button>
-        <Button size="sm" variant="ghost" type="button" onClick={onDone}>
-          Закрыть
-        </Button>
+        {/* Кнопки всегда справа: на телефоне — иконки, на широком экране — с подписью */}
+        <div className="flex shrink-0 items-center gap-1">
+          <Button
+            size="sm"
+            type="submit"
+            className="size-9 px-0 sm:w-auto sm:px-3.5"
+            disabled={!valid || add.isPending}
+            title="Сохранить"
+            aria-label="Сохранить"
+          >
+            {add.isPending ? <Loader2 className="animate-spin" /> : <Check />}
+            <span className="hidden sm:inline">Сохранить</span>
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            type="button"
+            className="size-9 px-0 sm:w-auto sm:px-3.5"
+            onClick={onDone}
+            title="Закрыть"
+            aria-label="Закрыть"
+          >
+            <X />
+            <span className="hidden sm:inline">Закрыть</span>
+          </Button>
+        </div>
       </form>
       {unit === "шт" && !product.piece_grams && (
         <p className="text-xs text-muted-foreground">
@@ -500,7 +522,7 @@ export default function ProductsPage() {
         </p>
       ) : (
         <div className="overflow-hidden rounded-3xl border bg-card">
-          <div className="overflow-x-auto">
+          <div className="@container overflow-x-auto">
             <table className="w-full min-w-[880px] text-sm">
               <thead>
                 <tr className="border-b text-left text-xs text-muted-foreground">
@@ -565,12 +587,15 @@ export default function ProductsPage() {
                     </tr>
                     {open?.id === p.id && (
                       <tr className="border-b">
-                        <td colSpan={COLUMNS.length + 3} className="px-4 py-3">
-                          {open.kind === "merge" ? (
-                            <MergeRow product={p} all={all} onDone={() => setOpen(null)} />
-                          ) : (
-                            <PriceRow product={p} onDone={() => setOpen(null)} />
-                          )}
+                        <td colSpan={COLUMNS.length + 3} className="p-0">
+                          {/* Панель не уезжает вместе с прокруткой таблицы: прижата слева и шириной ровно с видимую область */}
+                          <div className="sticky left-0 w-[100cqw] px-4 py-3">
+                            {open.kind === "merge" ? (
+                              <MergeRow product={p} all={all} onDone={() => setOpen(null)} />
+                            ) : (
+                              <PriceRow product={p} onDone={() => setOpen(null)} />
+                            )}
+                          </div>
                         </td>
                       </tr>
                     )}
