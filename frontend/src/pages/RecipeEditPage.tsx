@@ -760,15 +760,7 @@ export default function RecipeEditPage() {
 
           <div className="grid grid-cols-2 gap-5 sm:grid-cols-4">
             <Field id="servings" label="Порций">
-              <Input
-                id="servings"
-                type="number"
-                inputMode="numeric"
-                min={1}
-                max={100}
-                value={form.servings}
-                onChange={(e) => set("servings", Math.min(100, Math.max(1, Number(e.target.value) || 1)))}
-              />
+              <ServingsInput id="servings" value={form.servings} onChange={(v) => set("servings", v)} />
             </Field>
             <Field id="prep" label="Подготовка, мин">
               <Input id="prep" inputMode="numeric" value={form.prep} onChange={(e) => set("prep", e.target.value.replace(/\D/g, ""))} />
@@ -1098,5 +1090,41 @@ export default function RecipeEditPage() {
         </div>
       </div>
     </form>
+  );
+}
+
+/**
+ * Поле «Порций»: пока пользователь печатает, значение можно стереть целиком;
+ * в форму уходит только корректное число 1–100, а при уходе с поля пустое
+ * или нулевое значение возвращается к последнему корректному.
+ */
+function ServingsInput({ id, value, onChange }: { id: string; value: number; onChange: (v: number) => void }) {
+  const [text, setText] = useState(String(value));
+
+  // Значение могло смениться извне (загрузка рецепта, импорт по ссылке).
+  useEffect(() => {
+    setText((t) => (Number(t) === value ? t : String(value)));
+  }, [value]);
+
+  return (
+    <Input
+      id={id}
+      inputMode="numeric"
+      autoComplete="off"
+      value={text}
+      onFocus={(e) => e.currentTarget.select()}
+      onChange={(e) => {
+        const digits = e.target.value.replace(/\D/g, "").slice(0, 3);
+        setText(digits);
+        const n = Number(digits);
+        if (n >= 1) onChange(Math.min(100, n));
+      }}
+      onBlur={() => {
+        const n = Number(text);
+        const fixed = n >= 1 ? Math.min(100, n) : value;
+        setText(String(fixed));
+        if (fixed !== value) onChange(fixed);
+      }}
+    />
   );
 }
