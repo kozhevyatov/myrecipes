@@ -73,7 +73,7 @@ ghcr.io/kozhevyatov/myrecipes:latest
 
 Образ собран для `linux/amd64`. Приложение слушает порт **1331**. Все данные хранятся в томе `/data`: конфиг, секретный ключ, фотографии, а при SQLite и сама база.
 
-Выберите один из трёх вариантов, сохраните его как `docker-compose.yml` и запустите:
+Выберите один из трёх вариантов, сохраните его как `docker-compose.yml` и запустите. Готовые файлы с комментариями лежат в папке [`examples/`](examples/):
 
 ```bash
 docker compose up -d
@@ -82,6 +82,8 @@ docker compose up -d
 Потом откройте `http://<сервер>:1331`. Если база не задана заранее, откроется мастер настройки.
 
 ### Вариант 1. SQLite (самый простой)
+
+Файл: [`examples/docker-compose.sqlite.example.yml`](examples/docker-compose.sqlite.example.yml)
 
 База хранится в файле `./data/recipes.db`, отдельный сервер БД не нужен. Подходит для дома и семьи.
 
@@ -104,6 +106,8 @@ services:
 В мастере выберите **SQLite**, затем создайте администратора.
 
 ### Вариант 2. Уже существующая MySQL / MariaDB
+
+Файл: [`examples/docker-compose.external-db.example.yml`](examples/docker-compose.external-db.example.yml)
 
 Если сервер базы данных у вас уже есть, сначала создайте базу и пользователя:
 
@@ -150,6 +154,8 @@ networks:
 > Спецсимволы в пароле (`@`, `:`, `/`, `#`) в `DATABASE_URL` нужно экранировать: `@` → `%40`, `:` → `%3A` и т. д.
 
 ### Вариант 3. Всё в одном: приложение + MariaDB
+
+Файлы: [`examples/docker-compose.mariadb.example.yml`](examples/docker-compose.mariadb.example.yml) и [`examples/.env.example`](examples/.env.example)
 
 Один compose поднимает приложение и отдельный контейнер MariaDB. Подходит, если базы ещё нет, а SQLite не устраивает.
 
