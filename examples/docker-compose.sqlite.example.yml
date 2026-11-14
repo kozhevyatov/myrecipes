@@ -1,0 +1,24 @@
+# «Мои рецепты» — вариант 1: SQLite
+# База — файл ./data/recipes.db, отдельный сервер БД не нужен.
+#
+#   cp examples/docker-compose.sqlite.example.yml docker-compose.yml
+#   docker compose up -d
+#
+# Откройте http://<сервер>:1331 — в мастере выберите SQLite и создайте администратора.
+
+services:
+  app:
+    image: ghcr.io/kozhevyatov/myrecipes:latest
+    # build: .                  # вместо image — собрать из исходников (в т.ч. под ARM)
+    container_name: myrecipes
+    restart: unless-stopped
+    ports:
+      - "1331:1331"
+    volumes:
+      - ./data:/data            # база, конфиг, секретный ключ, фото
+    environment:
+      TZ: Europe/Moscow
+      # Защита мастера первого запуска — обязательно, если сервер виден из интернета
+      # SETUP_TOKEN: "придумайте-длинную-строку"
+      # Пропустить шаг выбора БД в мастере:
+      # DATABASE_URL: "sqlite:////data/recipes.db"

@@ -1,0 +1,44 @@
+# «Мои рецепты» — вариант 3: приложение + своя MariaDB в одном compose
+#
+#   cp examples/docker-compose.mariadb.example.yml docker-compose.yml
+#   cp examples/.env.example .env          # и впишите свои пароли
+#   docker compose up -d
+#
+# Порт базы наружу не открыт — MariaDB видна только приложению.
+
+services:
+  app:
+    image: ghcr.io/kozhevyatov/myrecipes:latest
+    # build: .                  # вместо image — собрать из исходников (в т.ч. под ARM)
+    container_name: myrecipes
+    restart: unless-stopped
+    ports:
+      - "1331:1331"
+    volumes:
+      - ./data:/data            # конфиг, секретный ключ, фото
+    environment:
+      TZ: Europe/Moscow
+      DATABASE_URL: "mysql+pymysql://recipes:${DB_PASSWORD}@db:3306/recipes?charset=utf8mb4"
+      # SETUP_TOKEN: "придумайте-длинную-строку"
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: mariadb:11
+    container_name: myrecipes-db
+    restart: unless-stopped
+    volumes:
+      - ./mysql:/var/lib/mysql  # файлы базы — бэкапьте вместе с ./data
+    environment:
+      MARIADB_DATABASE: recipes
+      MARIADB_USER: recipes
+      MARIADB_PASSWORD: ${DB_PASSWORD}
+      MARIADB_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+      MARIADB_CHARACTER_SET_SERVER: utf8mb4
+      MARIADB_COLLATION_SERVER: utf8mb4_unicode_ci
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 10s
+      timeout: 5s
+      retries: 10

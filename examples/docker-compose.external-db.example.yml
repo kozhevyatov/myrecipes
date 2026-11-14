@@ -1,0 +1,38 @@
+# «Мои рецепты» — вариант 2: уже существующая MySQL / MariaDB
+#
+# 1. Создайте базу и пользователя на своём сервере БД:
+#      CREATE DATABASE recipes CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+#      CREATE USER 'recipes'@'%' IDENTIFIED BY 'надёжный-пароль';
+#      GRANT ALL PRIVILEGES ON recipes.* TO 'recipes'@'%';
+#      FLUSH PRIVILEGES;
+# 2. Поправьте DATABASE_URL и сеть ниже.
+# 3. cp examples/docker-compose.external-db.example.yml docker-compose.yml && docker compose up -d
+#
+# Таблицы создаются автоматически. Спецсимволы в пароле экранируйте: @ → %40, : → %3A, / → %2F, # → %23.
+
+services:
+  app:
+    image: ghcr.io/kozhevyatov/myrecipes:latest
+    # build: .                  # вместо image — собрать из исходников (в т.ч. под ARM)
+    container_name: myrecipes
+    restart: unless-stopped
+    ports:
+      - "1331:1331"
+    volumes:
+      - ./data:/data            # конфиг, секретный ключ, фото
+    networks:
+      - db
+    environment:
+      TZ: Europe/Moscow
+      # База в Docker на этом же сервере — хост = имя контейнера БД (здесь «db»):
+      DATABASE_URL: "mysql+pymysql://recipes:надёжный-пароль@db:3306/recipes?charset=utf8mb4"
+      # База на другом сервере — укажите его адрес и удалите блоки networks:
+      # DATABASE_URL: "mysql+pymysql://recipes:надёжный-пароль@192.168.1.10:3306/recipes?charset=utf8mb4"
+      # SETUP_TOKEN: "придумайте-длинную-строку"
+
+# Внешняя Docker-сеть, в которой уже работает контейнер базы.
+# Узнать имя: docker network ls  /  docker inspect <контейнер_бд>
+networks:
+  db:
+    external: true
+    name: db
