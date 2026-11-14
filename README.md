@@ -68,7 +68,7 @@
 Готовый образ публикуется в GitHub Container Registry:
 
 ```
-ghcr.io/nskarl/myrecipes:latest
+ghcr.io/kozhevyatov/myrecipes:latest
 ```
 
 Образ собран для `linux/amd64`. Приложение слушает порт **1331**. Все данные хранятся в томе `/data`: конфиг, секретный ключ, фотографии, а при SQLite и сама база.
@@ -88,7 +88,7 @@ docker compose up -d
 ```yaml
 services:
   app:
-    image: ghcr.io/nskarl/myrecipes:latest
+    image: ghcr.io/kozhevyatov/myrecipes:latest
     container_name: myrecipes
     restart: unless-stopped
     ports:
@@ -119,7 +119,7 @@ FLUSH PRIVILEGES;
 ```yaml
 services:
   app:
-    image: ghcr.io/nskarl/myrecipes:latest
+    image: ghcr.io/kozhevyatov/myrecipes:latest
     container_name: myrecipes
     restart: unless-stopped
     ports:
@@ -156,7 +156,7 @@ networks:
 ```yaml
 services:
   app:
-    image: ghcr.io/nskarl/myrecipes:latest
+    image: ghcr.io/kozhevyatov/myrecipes:latest
     container_name: myrecipes
     restart: unless-stopped
     ports:
@@ -204,11 +204,11 @@ DB_ROOT_PASSWORD=ещё-более-надёжный-пароль
 Вместо готового образа можно собрать свой:
 
 ```bash
-git clone https://github.com/nskarl/myrecipes.git
+git clone https://github.com/kozhevyatov/myrecipes.git
 cd myrecipes
 ```
 
-В любом из вариантов выше замените `image: ghcr.io/nskarl/myrecipes:latest` на `build: .` и запустите `docker compose up -d --build`. Так образ соберётся и под ARM, например для Raspberry Pi или Apple Silicon.
+В любом из вариантов выше замените `image: ghcr.io/kozhevyatov/myrecipes:latest` на `build: .` и запустите `docker compose up -d --build`. Так образ соберётся и под ARM, например для Raspberry Pi или Apple Silicon.
 
 ### Обновление
 
