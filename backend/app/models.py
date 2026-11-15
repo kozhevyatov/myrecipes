@@ -13,8 +13,10 @@ from sqlalchemy import (
     String,
     Table,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.dialects import mysql
 
 from .db import Base
 
@@ -335,3 +337,100 @@ class ProductAlias(Base):
     alias: Mapped[str] = mapped_column(String(128), unique=True)  # в нижнем регистре
     match_key: Mapped[str] = mapped_column(String(128), index=True)
     product_id: Mapped[int] = mapped_column(ForeignKey("products.id", ondelete="CASCADE"), index=True)
+
+
+class ImportSource(Base):
+    """A connected recipe site with a verified parsing configuration."""
+
+    __tablename__ = "import_sources"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    key: Mapped[str] = mapped_column(String(64), unique=True)
+    name: Mapped[str] = mapped_column(String(120))
+    definition_json: Mapped[str] = mapped_column(Text)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=True)
+    verified: Mapped[bool] = mapped_column(Boolean, default=False)
+    checked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str] = mapped_column(Text, default="")
+    sample_json: Mapped[str] = mapped_column(Text, default="{}")
+    visible_in_catalog: Mapped[bool] = mapped_column(Boolean, default=False)
+    auto_refresh: Mapped[bool] = mapped_column(Boolean, default=False)
+    refresh_interval_hours: Mapped[int] = mapped_column(Integer, default=24)
+    refresh_author_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    last_indexed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    next_refresh_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    index_complete: Mapped[bool] = mapped_column(Boolean, default=False)
+    index_error: Mapped[str] = mapped_column(String(2000), default="")
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class SourceCategory(Base):
+    """A real category URL discovered on a connected recipe site."""
+
+    __tablename__ = "source_categories"
+    __table_args__ = (UniqueConstraint("source_id", "url_hash", name="uq_source_category_url"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("import_sources.id", ondelete="CASCADE"), index=True)
+    url_hash: Mapped[str] = mapped_column(String(64))
+    url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    title: Mapped[str] = mapped_column(String(200))
+    parent_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class SourceRecipe(Base):
+    """A cached external recipe, independent of a user's imported collection."""
+
+    __tablename__ = "source_recipes"
+    __table_args__ = (UniqueConstraint("source_id", "url_hash", name="uq_source_recipe_url"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("import_sources.id", ondelete="CASCADE"), index=True)
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("source_categories.id", ondelete="SET NULL"), nullable=True, index=True)
+    url_hash: Mapped[str] = mapped_column(String(64))
+    url: Mapped[str] = mapped_column(Text)
+    title: Mapped[str] = mapped_column(String(200), default="")
+    description: Mapped[str] = mapped_column(Text, default="")
+    image_url: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payload_json: Mapped[str | None] = mapped_column(Text().with_variant(mysql.LONGTEXT(), "mysql", "mariadb"), nullable=True)
+    first_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    last_seen_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_error: Mapped[str] = mapped_column(Text, default="")
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+
+    source: Mapped[ImportSource] = relationship(lazy="joined")
+    category: Mapped[SourceCategory | None] = relationship(lazy="joined")
+
+
+class SourceRecipeImport(Base):
+    """One durable explicit import per external recipe and user."""
+
+    __tablename__ = "source_recipe_imports"
+
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    source_recipe_id: Mapped[int] = mapped_column(ForeignKey("source_recipes.id", ondelete="CASCADE"), primary_key=True)
+    recipe_id: Mapped[int] = mapped_column(ForeignKey("recipes.id", ondelete="CASCADE"), index=True)
+
+
+class ImportJob(Base):
+    """A durable import request and its latest progress report."""
+
+    __tablename__ = "import_jobs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    source_id: Mapped[int] = mapped_column(ForeignKey("import_sources.id", ondelete="RESTRICT"), index=True)
+    author_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="RESTRICT"), index=True)
+    mode: Mapped[str] = mapped_column(String(16), default="import")
+    parameters_json: Mapped[str] = mapped_column(Text().with_variant(mysql.LONGTEXT(), "mysql", "mariadb"))
+    report_json: Mapped[str] = mapped_column(Text().with_variant(mysql.LONGTEXT(), "mysql", "mariadb"), default="{}")
+    status: Mapped[str] = mapped_column(String(16), default="queued", index=True)
+    active_slot: Mapped[str | None] = mapped_column(String(16), nullable=True, unique=True)
+    owner_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    source: Mapped[ImportSource] = relationship(lazy="joined")

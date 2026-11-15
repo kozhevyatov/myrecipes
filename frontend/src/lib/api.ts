@@ -274,6 +274,119 @@ export type RecipeQuery = {
   favorites?: boolean;
   limit?: number;
   offset?: number;
+  source_id?: number;
+};
+
+export type RecipeSourceSummary = { id: number; name: string; hosts: string[] };
+export type RecipeSourceDefinition = {
+  canonical_host: string;
+  hosts: string[];
+  catalog_url: string;
+  recipe_pattern: string;
+  catalog_pattern: string;
+  aliases?: string[];
+  recipe_trailing_slash?: boolean;
+};
+export type RecipeImportSource = RecipeSourceSummary & {
+  key: string;
+  catalog_url: string;
+  enabled: boolean;
+  verified: boolean;
+  checked_at: string | null;
+  last_error: string;
+  visible_in_catalog: boolean;
+  auto_refresh: boolean;
+  refresh_interval_hours: number;
+  last_indexed_at: string | null;
+  next_refresh_at: string | null;
+  index_complete: boolean;
+  index_error: string;
+  total_recipes: number | null;
+  indexed_recipes: number;
+  imported_recipes: number;
+  categories_count: number;
+  sample: {
+    title?: string;
+    source_url?: string;
+    ingredients?: number;
+    steps?: number;
+    step_images?: number;
+    has_cover?: boolean;
+  };
+};
+export type RecipeImportMode = "import" | "images" | "index";
+export type RecipeSourceUpdate = {
+  name?: string;
+  enabled?: boolean;
+  visible_in_catalog?: boolean;
+  auto_refresh?: boolean;
+  refresh_interval_hours?: number;
+};
+export type SiteRecipeCategory = { id: number; title: string; url: string | null; parent_url: string | null; recipes_count: number };
+export type SiteRecipe = {
+  id: number;
+  source_id: number;
+  source_name: string;
+  title: string;
+  description: string;
+  image_url: string | null;
+  category: { id: number; title: string } | null;
+  source_url: string;
+  imported_recipe_id: number | null;
+};
+export type SiteRecipeDetail = SiteRecipe & {
+  servings: number | null;
+  prep_minutes: number | null;
+  cook_minutes: number | null;
+  tags: string[];
+  ingredients: { product: string; amount: number | null; unit: string; note: string; group: string }[];
+  steps: { text: string; image_url: string | null }[];
+};
+export type RecipeImportStatus = "queued" | "running" | "stopping" | "completed" | "failed" | "stopped";
+export type RecipeImportParameters = {
+  limit: number;
+  is_public: boolean;
+  urls?: string[];
+  catalog_url?: string | null;
+  no_step_images?: boolean;
+  category_id?: number | null;
+};
+export type RecipeImportReport = {
+  created?: number;
+  updated_images?: number;
+  updated_step_images?: number;
+  step_images?: number;
+  duplicates?: number;
+  skipped?: number;
+  attempted?: number;
+  processed?: number;
+  discovered?: number;
+  indexed?: number;
+  cached?: number;
+  cache_hits?: number;
+  downloaded_pages?: number;
+  catalog_pages?: number;
+  complete?: boolean;
+  stop_reason?: string;
+  error_count?: number;
+  warning_count?: number;
+  details_truncated?: boolean;
+  current_url?: string;
+  errors?: { error?: string; url?: string; stage?: string }[];
+  warnings?: { warning?: string; url?: string }[];
+};
+export type RecipeImportJob = {
+  id: number;
+  source_id: number;
+  source_name: string;
+  mode: RecipeImportMode;
+  status: RecipeImportStatus;
+  created_at: string;
+  started_at: string | null;
+  finished_at: string | null;
+  parameters: RecipeImportParameters;
+  report: RecipeImportReport;
+  cancel_requested: boolean;
 };
 
 function qs(params: Record<string, unknown>): string {
@@ -669,5 +782,32 @@ export const api = {
       return request<User>(`/api/admin/users/${id}/avatar`, { method: "POST", body: form });
     },
     removeAvatar: (id: number) => request<User>(`/api/admin/users/${id}/avatar`, { method: "DELETE" }),
+  },
+
+  imports: {
+    catalogSources: () => request<RecipeSourceSummary[]>("/api/recipe-sources"),
+    sources: () => request<RecipeImportSource[]>("/api/admin/imports/sources"),
+    addSource: (data: { name?: string; catalog_url: string; definition?: RecipeSourceDefinition }) =>
+      request<RecipeImportSource>("/api/admin/imports/sources", { method: "POST", body: json(data) }),
+    checkSource: (id: number) =>
+      request<RecipeImportSource>(`/api/admin/imports/sources/${id}/check`, { method: "POST" }),
+    updateSource: (id: number, data: RecipeSourceUpdate) =>
+      request<RecipeImportSource>(`/api/admin/imports/sources/${id}`, { method: "PATCH", body: json(data) }),
+    removeSource: (id: number) => request<void>(`/api/admin/imports/sources/${id}`, { method: "DELETE" }),
+    categories: (id: number) => request<SiteRecipeCategory[]>(`/api/admin/imports/sources/${id}/categories`),
+    jobs: () => request<RecipeImportJob[]>("/api/admin/imports/jobs"),
+    start: (data: RecipeImportParameters & { source_id: number; mode: RecipeImportMode }) =>
+      request<RecipeImportJob>("/api/admin/imports/jobs", { method: "POST", body: json(data) }),
+    stop: (id: number) => request<RecipeImportJob>(`/api/admin/imports/jobs/${id}/stop`, { method: "POST" }),
+    resume: (id: number) => request<RecipeImportJob>(`/api/admin/imports/jobs/${id}/resume`, { method: "POST" }),
+  },
+
+  siteRecipes: {
+    sources: () => request<RecipeSourceSummary[]>("/api/site-recipes/sources"),
+    categories: (sourceId?: number) => request<SiteRecipeCategory[]>(`/api/site-recipes/categories${qs({ source_id: sourceId })}`),
+    list: (params: { source_id?: number; category_id?: number; q?: string; limit?: number; offset?: number }) =>
+      request<{ items: SiteRecipe[]; total: number }>(`/api/site-recipes${qs(params)}`),
+    get: (id: number) => request<SiteRecipeDetail>(`/api/site-recipes/${id}`),
+    import: (id: number) => request<{ recipe_id: number; already_imported: boolean; warnings: string[] }>(`/api/site-recipes/${id}/import`, { method: "POST", body: json({ is_public: false }) }),
   },
 };

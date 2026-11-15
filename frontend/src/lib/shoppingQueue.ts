@@ -93,7 +93,9 @@ const listeners = new Set<() => void>();
 /** Вызывается после успешной отправки — чтобы перечитать списки. */
 export function onFlushed(fn: () => void) {
   listeners.add(fn);
-  return () => listeners.delete(fn);
+  return () => {
+    listeners.delete(fn);
+  };
 }
 
 async function send(op: Op) {

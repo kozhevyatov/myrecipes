@@ -19,6 +19,7 @@ import ShoppingPage from "@/pages/ShoppingPage";
 import PlanPage from "@/pages/PlanPage";
 import PantryPage from "@/pages/PantryPage";
 import SharedRecipePage from "@/pages/SharedRecipePage";
+import SiteRecipePage from "@/pages/SiteRecipePage";
 
 function RequireAuth({ children, admin = false }: { children: ReactNode; admin?: boolean }) {
   const { user } = useAuth();
@@ -55,6 +56,7 @@ export default function App() {
         }
       />
       <Route element={<Layout />}>
+        <Route path="/site-recipes/:id" element={<RequireAuth><SiteRecipePage /></RequireAuth>} />
         <Route
           index
           element={

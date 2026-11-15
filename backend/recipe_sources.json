@@ -1,0 +1,24 @@
+{
+  "food": {
+    "canonical_host": "food.ru",
+    "hosts": ["food.ru", "www.food.ru"],
+    "catalog_url": "https://food.ru/sitemap.xml",
+    "recipe_pattern": "/recipes/\\d+-[^/]+",
+    "catalog_pattern": "/(?:sitemap\\.xml|sitemaps/recipes-\\d+\\.xml)"
+  },
+  "rambler": {
+    "canonical_host": "eda.rambler.ru",
+    "hosts": ["eda.rambler.ru", "www.eda.rambler.ru"],
+    "catalog_url": "https://eda.rambler.ru/sitemap-index.xml",
+    "recipe_pattern": "/recepty/[^/]+/[^/]+-\\d+",
+    "catalog_pattern": "/(?:sitemap-index\\.xml|sitemap/map_RecipePagesGroup_https_\\d+\\.xml\\.gz)"
+  },
+  "iamcook": {
+    "canonical_host": "www.iamcook.ru",
+    "hosts": ["iamcook.ru", "www.iamcook.ru"],
+    "catalog_url": "https://www.iamcook.ru/sitemap.xml",
+    "recipe_pattern": "/showrecipe/\\d+",
+    "catalog_pattern": "/(?:sitemap\\.xml|theme/[^/]+|section/\\d+|showsubsection/\\d+|country/[^/]+|event/[^/]+)",
+    "aliases": ["amcook"]
+  }
+}

@@ -14,7 +14,7 @@ from fastapi.staticfiles import StaticFiles
 from . import db
 from .config import UPLOAD_DIR, settings
 from .images import cleanup_import_images, ensure_thumbs
-from .routers import admin, auth, backup, catalog, pantry, plan, profile, public, recipes, setup, shopping
+from .routers import admin, auth, backup, catalog, imports, pantry, plan, profile, public, recipes, setup, shopping
 
 VERSION = "0.8.0"
 
@@ -50,14 +50,22 @@ async def _snapshot_loop() -> None:
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    from .import_jobs import ImportWorker
+
     db.startup()
     cleanup_import_images()
     ensure_thumbs()
     task = asyncio.create_task(_snapshot_loop())
-    yield
-    task.cancel()
-    with suppress(asyncio.CancelledError):
-        await task
+    worker = ImportWorker()
+    worker.start()
+    try:
+        yield
+    finally:
+        worker.stop_event.set()
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
+        await asyncio.to_thread(worker.stop)
 
 
 class ImmutableStatic(StaticFiles):
@@ -75,6 +83,7 @@ app = FastAPI(title="Мои рецепты API", version=VERSION, lifespan=lifes
 app.include_router(setup.router)
 app.include_router(auth.router)
 app.include_router(admin.router)
+app.include_router(imports.router)
 app.include_router(catalog.router)
 app.include_router(recipes.router)
 app.include_router(backup.router)

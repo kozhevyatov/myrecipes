@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import random
+import json
 import secrets
 from datetime import timedelta
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from sqlalchemy import exists, func, or_, select, true
+from sqlalchemy import exists, func, or_, select, true, update
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, noload
 
 from ..db import get_db
@@ -29,6 +31,7 @@ from ..models import (
     Category,
     CookLog,
     Favorite,
+    ImportSource,
     PantryItem,
     Product,
     Recipe,
@@ -181,19 +184,20 @@ def _photo(name: str) -> PhotoOut:
     return PhotoOut(image=name, url=image_url(name) or "", thumb_url=thumb_url(name))
 
 
+def _step_out(step: RecipeStep) -> StepOut:
+    return StepOut(
+        id=step.id,
+        position=step.position,
+        text=step.text,
+        timer_minutes=step.timer_minutes,
+        image=step.image,
+        image_url=image_url(step.image),
+        thumb_url=thumb_url(step.image),
+    )
+
+
 def _steps_out(r: Recipe) -> list[StepOut]:
-    return [
-        StepOut(
-            id=s.id,
-            position=s.position,
-            text=s.text,
-            timer_minutes=s.timer_minutes,
-            image=s.image,
-            image_url=image_url(s.image),
-            thumb_url=thumb_url(s.image),
-        )
-        for s in r.steps
-    ]
+    return [_step_out(step) for step in r.steps]
 
 
 def pantry_ids(db: Session, user: User) -> set[int]:
@@ -290,10 +294,18 @@ def list_recipes(
     favorites: bool = False,
     limit: int = Query(default=24, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
+    source_id: int | None = Query(default=None, ge=1),
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> RecipeListOut:
     conds = _filters(user, q, category_id, tag, mine, favorites)
+    if source_id is not None:
+        source = db.get(ImportSource, source_id)
+        if source is None or not source.enabled or not source.verified:
+            raise HTTPException(404, "Источник рецептов не подключён")
+        definition = json.loads(source.definition_json)
+        conds.append(or_(*(Recipe.source_url.like(f"{scheme}://{host}/%")
+                           for host in definition["hosts"] for scheme in ("http", "https"))))
     total = db.scalar(select(func.count()).select_from(Recipe).where(*conds)) or 0
     rows = db.scalars(
         select(Recipe)
@@ -653,6 +665,48 @@ def disable_share(recipe_id: int, db: Session = Depends(get_db), user: User = De
 
 
 # ---------- фото ----------
+@router.post("/{recipe_id}/steps/{step_id}/image", response_model=StepOut)
+async def upload_step_image(
+    recipe_id: int,
+    step_id: int,
+    file: UploadFile = File(...),
+    only_if_missing: bool = Query(default=True),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> StepOut:
+    """Attach an image to one owned step without replacing recipe content."""
+    recipe = _get_editable(db, recipe_id, user)
+    step = next((item for item in recipe.steps if item.id == step_id), None)
+    if step is None:
+        raise HTTPException(404, "Recipe step not found")
+    if only_if_missing and step.image:
+        return _step_out(step)
+    name = await save_image(file)
+    old = step.image
+    try:
+        statement = update(RecipeStep).where(RecipeStep.id == step_id, RecipeStep.recipe_id == recipe_id)
+        if only_if_missing:
+            statement = statement.where(RecipeStep.image.is_(None))
+        result = db.execute(statement.values(image=name).execution_options(synchronize_session=False))
+        if result.rowcount == 0:
+            db.rollback()
+            delete_image(name)
+            current = db.scalar(select(RecipeStep).where(RecipeStep.id == step_id, RecipeStep.recipe_id == recipe_id))
+            if current is None:
+                raise HTTPException(404, "Recipe step no longer exists")
+            return _step_out(current)
+        recipe.updated_at = utcnow()
+        db.commit()
+    except SQLAlchemyError:
+        db.rollback()
+        delete_image(name)
+        raise HTTPException(500, "Could not save the step image; check the service and retry") from None
+    db.refresh(step)
+    if old and old not in recipe.image_names():
+        delete_image(old)
+    return _step_out(step)
+
+
 @router.post("/{recipe_id}/image", response_model=RecipeOut)
 async def upload_image(
     recipe_id: int,

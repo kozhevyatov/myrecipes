@@ -256,7 +256,381 @@ mysql+pymysql://user:password@host:3306/recipes?charset=utf8mb4
 
 - Сохраняйте папку `./data`: в ней конфиг, ключ, фотографии, а при SQLite и сама база.
 - Если используете MySQL/MariaDB, бэкапьте и её: при варианте 3 это папка `./mysql` или `mysqldump`.
-- Есть встроенный экспорт рецептов. **Профиль → Резервная копия** скачивает zip с рецептами и фото, его можно импортировать на другом сервере. Пользователи и настройки в архив не входят.
+- Administrators can export a ZIP with recipes and photos from **Управление → Резервная копия** and import it on another server. Users and settings are not included in the archive.
+
+### Recipe sources and imports in the admin interface
+
+Administrators can manage collection under **Управление → Источники рецептов**.
+The service uses the same parser, verified TLS, adaptive request pacing and image
+handling as the command-line collector. Imports run on the server without
+requesting or storing another account password.
+
+1. Food.ru, Rambler/eda and IamCook appear as initial source presets. Click
+   **Проверить** before the first import. Verification reads a complete sample
+   recipe and checks its cover; the source card shows ingredient, instruction
+   and step-photo counts. A failed check displays its error and prevents new
+   jobs for that source.
+2. To connect another site, enter its HTTPS site or catalog URL and click
+   **Определить и подключить**. Known sites use their existing parsing settings.
+   For other sites, automatic detection makes a bounded search through links
+   and sitemaps on the same site, finds a complete recipe, and derives source
+   URL patterns. The service then verifies a sample recipe before saving the
+   source. Detection may take some time; failures retain the entered URL and
+   display the reason. Sites with blocked access, JavaScript-only recipes, or
+   unsupported or incomplete recipe markup cannot be connected automatically.
+   The optional **Ручные настройки — необязательно** section accepts a JSON
+   definition to override detection; its fields match the collector
+   configuration documented below. Sources can be disabled without deleting
+   recipes or previous job reports.
+   Every source, including the initial presets, can be renamed or removed.
+   Removing a source hides its external catalog, disables scheduled refreshes
+   and stops its active work; recipes and photos already imported into user
+   collections are preserved. Removed presets stay removed after reloading the
+   page or restarting the service. Adding that site's URL again reconnects it
+   after verification.
+3. Use **Обновить каталог** to save the site's recipe index and categories.
+   The index retains source URLs, recipe metadata and preparation instructions
+   separately from recipes in personal collections. Source cards show the
+   number found, the number imported, the last update and whether the scan
+   completed. A partial scan is identified explicitly; its count is not an
+   assertion of the site's global recipe total. Categories come from the
+   source's available catalog links and recipe metadata.
+4. Choose **Добавить рецепты** and select the whole source, a category from
+   the source's dropdown, or up to 100 individual recipe links. A limit of
+   **0** processes recipes until discovery is exhausted or the job is stopped.
+   A positive limit stops after that many new recipes; duplicates do not
+   consume it. Choose visibility and optionally disable step photos. Discovery
+   follows the source's available links and sitemaps; it does not guarantee
+   that every recipe on an arbitrary site can be enumerated.
+   Administrative imports also populate the source catalog as they run:
+   discovered categories and normalized recipe URLs are upserted, and recipe
+   metadata is saved from the page already parsed for import. An existing
+   catalog payload is reused without fetching its recipe page again; photos
+   are downloaded as required for the personal recipe. Importing a subset
+   does not mark the whole source as scanned or remove other catalog entries.
+   Old personal recipes whose original source payload was never cached add
+   URL references when encountered again, without fetching duplicate pages
+   or publishing personal edits. A catalog refresh can read those missing
+   source payloads. This synchronization applies to service-admin import
+   jobs; the standalone CLI and photo-repair jobs retain their existing scope.
+5. Choose **Дополнить фотографии** to add missing covers and step photos to
+   recipes owned by the administrator who starts the job. Existing images and
+   recipe text are preserved. Step photos require the current text and order
+   to match the source. This mode does not create recipes.
+6. **Последние задания** shows progress, current source URL, counts, errors and
+   warnings. A JSON report can be downloaded. Closing the browser does not
+   stop collection. **Остановить** requests a cooperative stop between network
+   operations and writes; completed recipe/image updates remain saved.
+
+Enable **Делать видимыми на сайте** to expose a source's indexed recipes in
+**Рецепты сайтов**. Authenticated users can filter that catalog, open a recipe
+and read its ingredients and steps without creating a personal recipe. Source
+images remain external until import. **Импортировать рецепт** explicitly saves
+the recipe and available photos into the current user's collection, privately
+by default. Repeating that action opens the already imported recipe. Disabled,
+unverified or hidden sources are not accessible through the external catalog.
+
+Optional automatic catalog refresh runs inside the server worker. It is
+disabled by default; its initial interval is 24 hours and can be changed in
+the admin interface. Refresh discovers new source recipes without importing
+them into personal collections. It shares the import queue and does not
+start a concurrent second administrative job. The service must be running for
+scheduled refreshes to execute.
+
+Only one administrative import job can be active at a time. Job ownership,
+progress and source definitions are persisted in the database. Continuing or
+repeating a finished job creates a new run with the same parameters: existing
+recipes are skipped and photo repair fills only missing images. After an
+interrupted server process, an expired 90-second worker lease marks its job as
+stopped, preserving the last report so it can be continued explicitly.
+
+Connected, enabled and verified sites appear in the catalog's **Источник
+рецептов** filter. It also recognizes recipes previously imported by the CLI
+through their source URLs. The existing **Новый рецепт → По ссылке** flow remains
+available for manual imports.
+
+Deployment includes migration **0013**, which adds `import_sources` and
+`import_jobs`, and **0014**, which adds the durable external catalog, source
+categories and refresh settings. The standard application startup runs these
+migrations. Update the
+backend and frontend/container together to expose the new admin controls. No
+external queue service or new package dependency is required. The CLI remains
+available and keeps its JSON configuration independent of connected sources
+stored in the service database.
+
+### Bulk collection from configured recipe sites
+
+`backend/collect_recipes.py` collects recipes from Food.ru, Rambler/eda and
+IamCook by default, and either saves them directly to a running service through
+its API or prepares a ZIP for the backup importer. It requires Python 3.10
+or newer and uses only the standard library; installing the backend dependencies
+is not necessary. Run these commands from the repository root:
+
+```bash
+# Save up to 100 recipes from all configured sites directly to the local service.
+# The password is requested in the terminal without displaying it.
+python3 backend/collect_recipes.py \
+  --server http://localhost:1331 --login admin --limit 100
+
+# Direct import with shared visibility and an explicit JSON report path.
+python3 backend/collect_recipes.py \
+  --server http://localhost:1331 --login admin --site rambler \
+  --limit 20 --public --report rambler-import-report.json
+
+# Collect from IamCook only.
+python3 backend/collect_recipes.py \
+  --server http://localhost:1331 --login admin --site iamcook --limit 20 --public
+
+# Continue until all discoverable recipes have been processed; stop with Ctrl+C.
+python3 backend/collect_recipes.py \
+  --server http://localhost:1331 --login admin --site food --limit 0 --public
+
+# Add missing covers and step photos without creating new recipes.
+python3 backend/collect_recipes.py \
+  --server http://localhost:1331 --login admin \
+  --fill-missing-images --limit 100
+
+# Repair photos for Food.ru recipes only.
+python3 backend/collect_recipes.py \
+  --server http://localhost:1331 --login admin \
+  --fill-missing-images --site food --report food-covers-report.json
+
+# Keep a fixed pause instead of adapting it to source response times.
+python3 backend/collect_recipes.py \
+  --server http://localhost:1331 --login admin --fixed-delay --delay 2 --limit 20
+
+# Import covers and text without downloading step photos.
+python3 backend/collect_recipes.py \
+  --server http://localhost:1331 --login admin --no-step-images --limit 20
+
+# Prepare a ZIP instead; the service does not need to be running.
+python3 backend/collect_recipes.py --output recipes.zip
+
+# One site and a smaller collection for reviewing the result.
+python3 backend/collect_recipes.py --site food --limit 10 --output food-sample.zip
+python3 backend/collect_recipes.py --site rambler --limit 10 --output rambler-sample.zip
+
+# Select both sites explicitly and omit all image downloads.
+python3 backend/collect_recipes.py \
+  --site food --site rambler --limit 50 --no-images --output recipes-text.zip
+
+# Collect a specific recipe instead of discovering URLs from sitemaps.
+python3 backend/collect_recipes.py \
+  --url https://eda.rambler.ru/recepty/pasta-picca/spagetti-karbonara-s-krasnym-lukom-17614 \
+  --output carbonara.zip
+
+# Read selected recipe URLs from a UTF-8 text file.
+python3 backend/collect_recipes.py --urls-file recipe-urls.txt --output selected-recipes.zip
+```
+
+Choose exactly one destination: `--server` for direct import or `--output` for a
+ZIP. All source selection, recipe limit, visibility and image options work in
+both modes. Direct import requires `--login`, which accepts the service username
+or email. The collector requests the password interactively; it has no password
+argument or password environment variable. Access and refresh tokens remain in
+memory, and authentication responses are not included in reports.
+
+Direct step-photo uploads require this version of the running backend. Rebuild
+or redeploy the backend/container before importing step photos: the new endpoint
+is `POST /api/recipes/{recipe_id}/steps/{step_id}/image?only_if_missing=true`.
+The collector checks `/openapi.json` before downloading or changing recipes in
+step-photo mode. An older backend is rejected with an actionable update message;
+HTTP 404 or 405 during an unchecked step upload also stops collection immediately.
+Use `--no-step-images` temporarily if only covers and text are needed. No database
+schema migration is required. The existing interface already displays stored
+step photos; this change does not add step-photo downloading to the interface's
+separate import-by-URL action.
+
+Direct import checks the signed-in user's existing recipes by title and source
+URL before writing, then creates categories and recipes through the API. A
+sequential rerun skips recipes already saved by that account. Run one collector
+at a time for an account: concurrent independent runs have no server-side
+uniqueness guarantee. Each recipe is saved before its cover is uploaded. A cover
+failure leaves the saved recipe in place and adds a warning. Step photos are
+uploaded to their matching saved step IDs. New recipes appear
+in the service as collection progresses; no ZIP is created in this mode.
+
+Use `--fill-missing-images` to add covers and step photos to recipes already owned by the
+signed-in account. This mode scans stored recipes with supported source URLs;
+it does not discover new recipes through sitemaps or create recipes or
+categories. Existing covers and step photos are retained. The collector matches
+the normalized source URL and checks for a cover again before uploading.
+Step-photo repair requires source and saved step texts to match in order;
+edited, reordered or mismatched steps are skipped with a warning. The collector
+updates image fields on existing recipe and step IDs. Other recipe fields and visibility are
+preserved. Unsupported source URLs count as skipped; ambiguous matches with
+multiple recipes sharing one source URL are skipped and recorded in the report.
+
+Without filters, image repair considers all configured sites. Use `--site`,
+`--url` or `--urls-file` to select sources or specific recipes. `--limit` bounds
+recipe repair attempts, and `--max-pages` also bounds source page attempts. The
+mode requires `--server` and cannot be combined with `--output` or `--no-images`.
+The JSON report includes `updated_images` for covers, `updated_step_images`, saved recipe IDs, skips, errors and
+warnings, and preserves partial progress on interruption. A normal import rerun
+continues to skip existing recipes; use the repair flag when images are
+missing. Repeating image repair skips images that have already been added.
+Use `--no-step-images` for cover-only repair; `--no-images` cannot be combined
+with the repair flag.
+
+`--report` selects the JSON report path for direct import. Without it, the
+collector chooses a new timestamped report filename. The report records saved
+recipe IDs, sources, duplicates, errors and warnings, including partial progress
+when collection stops. Existing reports are not overwritten. Authenticated API
+requests reject redirects, and an expired access token is refreshed once. A
+network error or HTTP 5xx during a write stops collection because the write may
+already have succeeded. Start a new run to check existing recipes before
+retrying; writes are not automatically retried after an uncertain result.
+
+The URL file contains one recipe URL per line. Blank lines and lines starting
+with `#` are ignored. `--url` and `--site` can be repeated. Supplying recipe URLs
+disables automatic discovery unless `--site` is also specified. Catalog pages
+such as `/recipes` or `/recepty` are not valid values for `--url`.
+
+Automatic discovery detects XML sitemaps, gzip-compressed sitemaps and HTML
+catalogs. It stays on the source's configured hosts, follows category and
+pagination links and checks same-site sitemaps to avoid repeatedly scanning
+only the homepage's recent recipes. A category scan remains scoped to the
+selected section. Traversal no longer ends silently after ten catalog pages.
+The default total recipe limit is 100; `--limit` accepts 0–5000, with **0**
+continuing until discovery is exhausted or stopped. `--max-pages` independently
+bounds recipe page attempts (default: 500, or unlimited when `--limit 0` is
+used; maximum positive value: 50000). An explicit `--max-pages 0` also removes
+that attempt limit. Sitemap, robots.txt and image requests do not count toward
+it. Recipes with the same normalized URL or case-insensitive title are skipped.
+Reports distinguish processed candidates from fetched recipe pages and record
+the stopping reason, including exhaustion, limits, partial discovery and a
+manual stop. Long-running imports retain bounded report details and indicate
+when details have been truncated; aggregate counters continue increasing.
+
+Source settings are stored in `backend/recipe_sources.json`. The bundled source
+IDs are `food`, `rambler` and `iamcook`; `amcook` remains an alias for `iamcook`.
+Repeat `--site` to select sources. Without `--site` or explicit recipe URLs, the
+collector alternates all configured sources. Use `--sources-file PATH` to load
+a different JSON source mapping instead of the bundled mapping. The same
+settings control direct import, ZIP collection, URL normalization and cover
+repair.
+
+Each source entry defines a canonical host, accepted host aliases, a starting
+catalog URL and full regular-expression matches for recipe and catalog URL
+paths. For example, a separate `my-sources.json` can contain:
+
+```json
+{
+  "example": {
+    "canonical_host": "recipes.example.org",
+    "hosts": ["recipes.example.org", "www.recipes.example.org"],
+    "catalog_url": "https://recipes.example.org/sitemap.xml",
+    "recipe_pattern": "/recipe/\\d+",
+    "catalog_pattern": "/(?:sitemap(?:-\\d+)?\\.xml(?:\\.gz)?|recipes(?:/page/\\d+)?)",
+    "aliases": ["example-recipes"]
+  }
+}
+```
+
+```bash
+python3 backend/collect_recipes.py \
+  --sources-file my-sources.json --site example --limit 20 --output example-recipes.zip
+```
+
+`hosts` explicitly lists the domains that belong to the source; recipe links
+are normalized to `canonical_host`, and tracking parameters are removed.
+`catalog_pattern` limits which nested maps or HTML catalog links may be followed.
+Set `recipe_trailing_slash` to `true` when recipe pages require a final `/`;
+automatic detection preserves this from its verified sample. Existing source
+definitions default to URLs without the final slash.
+Adding a compatible source therefore requires editing configuration rather than
+the Python collector. The shared parser reads JSON-LD `schema.org/Recipe`
+data and HTML microdata with `itemscope`/`itemprop`, including ingredients and
+ordered preparation steps. IamCook also has a built-in adapter because its structured data provides
+metadata while ingredients and instructions are stored in the page HTML.
+Other sites with incomplete structured data may need their own adapter;
+configuration does not add support for arbitrary page layouts,
+JavaScript-only content or CAPTCHAs. Review a small collection to check
+ingredient quantities, portions and covers for each new source.
+
+Requests are sequential and use adaptive pauses by default. `--delay` sets the
+initial pause (default: 2 seconds); `--min-delay` and `--max-delay` bound normal
+adaptation (defaults: 0.25 and 10 seconds). Each host is tracked separately.
+Successful responses gradually reduce the pause, response-time averages keep it
+appropriate for the host's speed, and failures increase it. Robots.txt
+crawl-delay or request-rate rules remain a lower bound even when they exceed
+`--max-delay`. Use `--fixed-delay --delay 2` to keep a constant requested pause.
+
+`--retries` controls bounded retries for source network errors and HTTP 5xx
+responses (default: 2, maximum: 5). Adaptive mode also retries HTTP 429 responses:
+a rate-limited response increases the pause, and a valid `Retry-After` cooldown
+is honored up to 60 seconds. Longer requested cooldowns stop that host rather
+than retrying early. Fixed-delay mode stops a host on HTTP 429; HTTP 401 or 403
+also stops requests to that host. Recipe pages and
+sitemaps respect robots.txt. If robots.txt cannot be checked, page requests to
+that origin fail; HTTP 404 is treated as an absent robots.txt. Page and sitemap
+downloads follow at most three HTTPS redirects that only add or remove a final
+slash on the same host, with robots rules checked again for each target. Other
+redirects are refused; supply the final URL directly when available. Automatic
+source detection can additionally establish a bare-domain/`www` alias through
+the entered site's initial HTTPS redirect before learning its source settings.
+
+Cover and step-photo downloads use the same downloader and User-Agent as importing a recipe
+through the service interface. They do not check the image host's robots.txt and
+can follow public HTTP redirects. This applies to both new recipes and missing
+image repair. TLS verification, public-host validation, image size limits,
+adaptive request pauses and bounded retries still apply. The collector does not
+solve CAPTCHAs. Authenticated
+service API requests continue to reject redirects.
+
+TLS trust is configured before the password prompt. The collector preserves
+Python's default trust store and explicit `SSL_CERT_FILE` / `SSL_CERT_DIR`
+settings. When Python has no default CA store, it detects a public system CA
+bundle (including `/etc/ssl/cert.pem` on macOS) and prints the selected source.
+No additional package is required. The same verified SSL context is used for
+source downloads and service API requests; certificate and hostname verification
+remain enabled. This does not change global Python settings or the web importer.
+To select a trusted PEM bundle explicitly, use
+`--ca-bundle /path/to/trusted-ca-bundle.pem`, or configure `SSL_CERT_FILE`.
+If a configured store fails verification, the collector reports the error without
+switching to another trust store.
+
+In ZIP mode, the archive contains `recipes.json`, downloaded covers and step photos under `images/`, and
+`collection-report.json` with collected sources, duplicate counts, errors and
+warnings. Source URLs and available source author names are preserved. Recipes
+without a title, ingredients or instructions are skipped. Missing quantities and
+servings are reported for review; when servings are missing, the service default
+of two is used. A cover download failure keeps the recipe and adds a warning.
+Step photographs are collected by default when the source provides them and are
+kept aligned with instruction text. Food.ru and Rambler expose them in structured
+data; IamCook's adapter reads them from the instruction blocks. Extra result or
+unrelated photos are not assigned to steps. A step without a source photo keeps
+its instruction text; failed downloads or uploads add warnings. Videos are not collected.
+`--no-step-images` skips step-photo downloads while retaining covers;
+`--no-images` skips all image downloads. Reports for new collection include
+`step_images`, while repair reports count successful step uploads in
+`updated_step_images`.
+The collector enforces the service's 100 MiB `recipes.json` limit and 2 GiB ZIP
+limit. If a size limit is exceeded, collect fewer recipes or use `--no-images`.
+
+The script never accesses the service database directly. In ZIP mode, open the
+archive report and review a small collection, then sign in as an administrator
+and use **Управление → Резервная копия → Восстановить из архива**. In direct mode,
+the signed-in API account owns the saved recipes; administrator privileges are
+not required. Recipes are private by default in both modes; pass `--public` when
+collecting to make them visible to other service users. The service's archive
+importer skips an existing recipe with the same title and owner by default.
+
+Existing ZIP output files are never overwritten. Choose a new `--output` path for
+each run. Collection does not resume a previous archive; if interrupted, the
+ZIP may be incomplete. In ZIP mode, a completed run exits with status 0 when at least one
+recipe was collected, or status 1 when none were collected. Partial failures are
+listed in the archive report.
+
+Use collected content according to each source's terms. Food.ru states that
+using its content requires written permission; retaining a source link does not
+replace that permission.
+
+Run the collector tests without network requests:
+
+```bash
+PYTHONPATH=backend python3 -B -m unittest discover -s backend/tests -v
+```
 
 ---
 

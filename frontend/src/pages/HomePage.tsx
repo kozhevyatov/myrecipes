@@ -4,9 +4,11 @@ import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-qu
 import { ChefHat, Dices, Home, Loader2, Plus, Search, X } from "lucide-react";
 import { RandomRecipeSheet } from "@/components/RandomRecipeSheet";
 import { RecipeCard } from "@/components/RecipeCard";
+import { SiteRecipeCatalog } from "@/components/SiteRecipeCatalog";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { plural } from "@/lib/format";
@@ -15,6 +17,17 @@ import { useOnline } from "@/lib/offline";
 const PAGE = 24;
 
 export default function HomePage() {
+  const [params, setParams] = useSearchParams();
+  const siteCatalog = params.get("view") === "sites";
+  function chooseCatalog(external: boolean) {
+    const next = new URLSearchParams(params);
+    if (external) next.set("view", "sites"); else next.delete("view");
+    setParams(next, { replace: true });
+  }
+  return <div className="grid gap-6"><div className="flex flex-wrap gap-2" aria-label="Каталог рецептов"><Chip active={!siteCatalog} aria-pressed={!siteCatalog} onClick={() => chooseCatalog(false)}>Коллекция</Chip><Chip active={siteCatalog} aria-pressed={siteCatalog} onClick={() => chooseCatalog(true)}>Рецепты сайтов</Chip></div>{siteCatalog ? <SiteRecipeCatalog /> : <LocalRecipesPage />}</div>;
+}
+
+function LocalRecipesPage() {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const q = params.get("q") ?? "";
@@ -22,6 +35,7 @@ export default function HomePage() {
   const tag = params.get("tag") ?? undefined;
   const mine = params.get("mine") === "1";
   const favorites = params.get("fav") === "1";
+  const sourceId = params.get("source") ? Number(params.get("source")) : undefined;
 
   // Поле поиска обновляет URL с небольшой задержкой
   const [search, setSearch] = useState(q);
@@ -47,11 +61,12 @@ export default function HomePage() {
 
   const categories = useQuery({ queryKey: ["categories"], queryFn: api.catalog.categories });
   const tags = useQuery({ queryKey: ["tags"], queryFn: api.catalog.tags });
+  const sources = useQuery({ queryKey: ["recipe-sources"], queryFn: api.imports.catalogSources });
 
   const recipes = useInfiniteQuery({
-    queryKey: ["recipes", { q, categoryId, tag, mine, favorites }],
+    queryKey: ["recipes", { q, categoryId, tag, mine, favorites, sourceId }],
     queryFn: ({ pageParam }) =>
-      api.recipes.list({ q: q || undefined, category_id: categoryId, tag, mine, favorites, limit: PAGE, offset: pageParam }),
+      api.recipes.list({ q: q || undefined, category_id: categoryId, tag, mine, favorites, source_id: sourceId, limit: PAGE, offset: pageParam }),
     initialPageParam: 0,
     getNextPageParam: (last, pages) => {
       const loaded = pages.reduce((n, p) => n + p.items.length, 0);
@@ -62,7 +77,7 @@ export default function HomePage() {
 
   const items = recipes.data?.pages.flatMap((p) => p.items) ?? [];
   const total = recipes.data?.pages[0]?.total ?? 0;
-  const filtered = Boolean(q || categoryId || tag || mine || favorites);
+  const filtered = Boolean(q || categoryId || tag || mine || favorites || sourceId);
   const name = user?.display_name || user?.username;
   const online = useOnline();
   const [randomOpen, setRandomOpen] = useState(false);
@@ -124,7 +139,7 @@ export default function HomePage() {
 
       {/* Фильтры: горизонтальная прокрутка на телефоне */}
       <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0">
-        <Chip active={!categoryId && !mine && !favorites} onClick={() => setParams(new URLSearchParams(q ? { q } : {}), { replace: true })}>
+        <Chip active={!categoryId && !mine && !favorites && !sourceId} onClick={() => setParams(new URLSearchParams(q ? { q } : {}), { replace: true })}>
           Все
         </Chip>
         <Chip active={favorites} onClick={() => setParam("fav", favorites ? null : "1")}>
@@ -144,6 +159,16 @@ export default function HomePage() {
           </Chip>
         ))}
       </div>
+
+      {sources.data && sources.data.length > 0 && (
+        <div className="grid max-w-sm gap-2">
+          <label htmlFor="recipe-source-filter" className="text-sm font-medium">Источник рецептов</label>
+          <Select id="recipe-source-filter" value={sourceId ?? ""} onChange={(event) => setParam("source", event.target.value || null)}>
+            <option value="">Все источники и свои рецепты</option>
+            {sources.data.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}
+          </Select>
+        </div>
+      )}
 
       {tags.data && tags.data.length > 0 && (
         <div className="-mt-2 flex flex-wrap gap-1.5">

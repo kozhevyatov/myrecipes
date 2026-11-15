@@ -7,13 +7,39 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
 
 # node
 node_modules/
 frontend/dist/
+coverage/
+playwright-report/
+test-results/
+
+# generated recipe collection reports and local databases
+collection-report-*.json
+/*-report.json
+*.sqlite
+*.sqlite3
+*.db
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
+*.db-wal
+*.db-shm
+/*.zip
 
 # прочее
 .env
+.env.*
+!.env.example
+/secret.key
 .DS_Store
 .idea/
 .vscode/

@@ -10,9 +10,11 @@ import ipaddress
 import json
 import re
 import socket
+import ssl
 import urllib.error
 import urllib.request
 from dataclasses import dataclass, field
+from html.parser import HTMLParser
 from urllib.parse import urljoin, urlparse
 
 MAX_PAGE_BYTES = 4 * 1024 * 1024
@@ -53,14 +55,34 @@ class _SafeRedirect(urllib.request.HTTPRedirectHandler):
 _opener = urllib.request.build_opener(_SafeRedirect)
 
 
-def fetch(url: str, limit: int, accept: str = "text/html,application/xhtml+xml,*/*;q=0.8") -> tuple[bytes, str, str]:
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: ANN001
+        return None
+
+
+_no_redirect_opener = urllib.request.build_opener(_NoRedirect)
+
+
+def fetch(
+    url: str,
+    limit: int,
+    accept: str = "text/html,application/xhtml+xml,*/*;q=0.8",
+    *,
+    user_agent: str = USER_AGENT,
+    allow_redirects: bool = True,
+    ssl_context: ssl.SSLContext | None = None,
+) -> tuple[bytes, str, str]:
     """Возвращает (данные, content-type, итоговый URL)."""
     _check_host(url)
     req = urllib.request.Request(
-        url, headers={"User-Agent": USER_AGENT, "Accept": accept, "Accept-Language": "ru,en;q=0.8"}
+        url, headers={"User-Agent": user_agent, "Accept": accept, "Accept-Language": "ru,en;q=0.8"}
     )
     try:
-        with _opener.open(req, timeout=TIMEOUT) as resp:
+        opener = _opener if allow_redirects else _no_redirect_opener
+        if ssl_context is not None:
+            redirect_handler = _SafeRedirect if allow_redirects else _NoRedirect
+            opener = urllib.request.build_opener(redirect_handler, urllib.request.HTTPSHandler(context=ssl_context))
+        with opener.open(req, timeout=TIMEOUT) as resp:
             data = resp.read(limit + 1)
             if len(data) > limit:
                 raise ImportError_("Страница слишком большая")
@@ -117,7 +139,12 @@ def find_recipe(page: str) -> dict | None:
         for node in _walk(data):
             if _is_recipe(node):
                 return node
-    return None
+    from recipe_microdata import find_microdata_recipe
+
+    try:
+        return find_microdata_recipe(page)
+    except ValueError as exc:
+        raise ImportError_("Разметка страницы слишком сложная или повреждена; автоматический импорт недоступен") from exc
 
 
 def _meta(page: str, prop: str) -> str | None:
@@ -180,26 +207,36 @@ def _image(value) -> str | None:  # noqa: ANN001
     return value if isinstance(value, str) and value.strip() else None
 
 
-def _steps(value) -> list[str]:  # noqa: ANN001
-    out: list[str] = []
+def _step_pairs(value) -> list[tuple[str, str | None]]:  # noqa: ANN001
+    """Flatten instructions while retaining the image belonging to each text step."""
+    out: list[tuple[str, str | None]] = []
     if isinstance(value, str):
         text = clean_text(value)
         # Одной строкой: «1. Сделать… 2. Потом…» или абзацы
         parts = re.split(r"\n+|(?<=[.!?])\s+(?=\d{1,2}[.)]\s)", text)
-        out.extend(p for p in parts if p.strip())
+        out.extend((part, None) for part in parts if part.strip())
     elif isinstance(value, list):
         for item in value:
-            out.extend(_steps(item))
+            out.extend(_step_pairs(item))
     elif isinstance(value, dict):
         t = value.get("@type")
         if t == "HowToSection" or "itemListElement" in value:
-            out.extend(_steps(value.get("itemListElement")))
+            out.extend(_step_pairs(value.get("itemListElement")))
         else:
             text = clean_text(value.get("text") or value.get("name") or value.get("description"))
             if text:
-                out.append(text)
+                out.append((text, _image(value.get("image"))))
     # Убираем «Шаг 1:» / «1.» в начале — номера рисуем сами
-    return [re.sub(r"^(?:шаг\s*)?\d{1,2}\s*[.):\-–—]\s*", "", s, flags=re.I).strip() for s in out if s.strip()]
+    result = []
+    for text, image in out:
+        text = re.sub(r"^(?:шаг\s*)?\d{1,2}\s*[.):\-–—]\s*", "", text, flags=re.I).strip()
+        if text:
+            result.append((text, image))
+    return result
+
+
+def _steps(value) -> list[str]:  # noqa: ANN001
+    return [text for text, _ in _step_pairs(value)]
 
 
 def _list_of_str(value) -> list[str]:  # noqa: ANN001
@@ -223,6 +260,7 @@ _UNITS: list[tuple[str, str]] = [
     (r"ст\.?\s?л\.?|стол\w*\s+лож\w*|ст\.\s?ложк\w*", "ст. л."),
     (r"стакан\w*|ст\.?(?=\s|$)", "стакан"),
     (r"шт\.?|штук\w*", "шт"),
+    (r"головк\w*", "шт"),
     (r"щепот\w*", "щепотка"),
     (r"зубч\w*|зуб\.", "зубчик"),
     (r"пуч\w*", "пучок"),
@@ -360,6 +398,18 @@ class ParsedIngredient:
 def parse_ingredient(line: str) -> ParsedIngredient:
     text = clean_text(line).replace("\n", " ")
     text = re.sub(r"\s+", " ", text).strip(" •-–—*")
+    # Prefer the explicit weight to an approximate piece-to-grams conversion.
+    equivalent = re.fullmatch(r"(.+?)\s*=\s*(\d+(?:[.,]\d+)?)\s*(г|мл)\.?", text, re.I)
+    if equivalent:
+        original = parse_ingredient(equivalent.group(1))
+        if original.amount is not None:
+            measure = f"{original.amount:g} {original.unit}"
+            return ParsedIngredient(
+                product=original.product,
+                amount=float(equivalent.group(2).replace(",", ".")),
+                unit=equivalent.group(3).lower(),
+                note=", ".join(x for x in (measure, original.note) if x)[:200],
+            )
     note = ""
 
     # Примечание в скобках: «Лук (средний)»
@@ -461,16 +511,142 @@ class ImportedRecipe:
     steps: list[str] = field(default_factory=list)
     image_url: str | None = None
     source_url: str = ""
+    step_images: list[str | None] = field(default_factory=list)
+
+
+class _IamCookFields(HTMLParser):
+    """Read IamCook's explicit recipe blocks when its JSON-LD omits their content."""
+
+    _VOID_TAGS = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.stack: list[str] = []
+        self.ingredient_root: int | None = None
+        self.ingredient_body: int | None = None
+        self.ingredient_selected = False
+        self.instructions_root: int | None = None
+        self.instructions_selected = False
+        self.capture: tuple[str, int, list[str]] | None = None
+        self.ingredients: list[str] = []
+        self.instructions: list[str] = []
+        self.instruction_images: list[str | None] = []
+        self.photo_root: int | None = None
+        self.capture_image: str | None = None
+
+    def _attach_image(self, image: str | None) -> None:
+        if image and self.instruction_images and self.instruction_images[-1] is None:
+            self.instruction_images[-1] = image
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attributes = dict(attrs)
+        classes = set((attributes.get("class") or "").split())
+        if tag in self._VOID_TAGS:
+            if tag == "br" and self.capture:
+                self.capture[2].append(" ")
+            if (tag == "img" and self.instructions_root is not None and self.photo_root is not None and
+                    "result-photo" not in classes and not any(item in ("script", "style") for item in self.stack)):
+                image = attributes.get("data-src") or attributes.get("data-original") or attributes.get("src")
+                if self.capture and self.capture[0] == "instruction":
+                    if self.capture_image is None:
+                        self.capture_image = image
+                else:
+                    self._attach_image(image)
+            return
+        self.stack.append(tag)
+        depth = len(self.stack)
+        if tag == "div" and "ilist" in classes and self.ingredient_root is None and not self.ingredient_selected:
+            self.ingredient_root = depth
+        elif (tag == "div" and self.ingredient_root is not None and
+              depth == self.ingredient_root + 1 and not self.ingredient_selected):
+            self.ingredient_body = depth
+            self.ingredient_selected = True
+        if tag == "div" and "instructions" in classes and not self.instructions_selected:
+            self.instructions_root = depth
+            self.instructions_selected = True
+        if tag == "div" and "primg" in classes and self.instructions_root is not None:
+            self.photo_root = depth
+        if self.capture is not None or any(item in ("script", "style") for item in self.stack):
+            return
+        if self.ingredient_body is not None and depth > self.ingredient_body and tag in ("p", "strong"):
+            self.capture = ("group" if tag == "strong" else "ingredient", depth, [])
+        elif self.instructions_root is not None and depth > self.instructions_root and tag == "p":
+            self.capture = ("instruction", depth, [])
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag not in self.stack:
+            return
+        index = len(self.stack) - 1 - self.stack[::-1].index(tag)
+        depth = index + 1
+        if self.capture and self.capture[1] >= depth:
+            kind, _, parts = self.capture
+            text = clean_text("".join(parts))
+            if text:
+                if kind == "instruction":
+                    self.instructions.append(text)
+                    self.instruction_images.append(self.capture_image)
+                else:
+                    self.ingredients.append(text.rstrip(":") + ":" if kind == "group" else text)
+            elif kind == "instruction":
+                self._attach_image(self.capture_image)
+            self.capture = None
+            self.capture_image = None
+        if self.ingredient_body is not None and self.ingredient_body >= depth:
+            self.ingredient_body = None
+        if self.ingredient_root is not None and self.ingredient_root >= depth:
+            self.ingredient_root = None
+        if self.instructions_root is not None and self.instructions_root >= depth:
+            self.instructions_root = None
+        if self.photo_root is not None and self.photo_root >= depth:
+            self.photo_root = None
+        del self.stack[index:]
+
+    def handle_data(self, data: str) -> None:
+        if self.capture and not any(tag in ("script", "style") for tag in self.stack):
+            self.capture[2].append(data)
+
+
+def _iamcook_fields(page: str, node: dict, source_url: str) -> dict:
+    parsed = urlparse(source_url)
+    if (parsed.hostname not in ("iamcook.ru", "www.iamcook.ru") or
+            not re.fullmatch(r"/showrecipe/\d+/?", parsed.path)):
+        return node
+    parser = _IamCookFields()
+    parser.feed(page)
+    parser.close()
+    result = node.copy()
+    if not (result.get("recipeIngredient") or result.get("ingredients")):
+        result["recipeIngredient"] = parser.ingredients
+    if not result.get("recipeInstructions"):
+        result["recipeInstructions"] = [
+            {"@type": "HowToStep", "text": text, "image": image}
+            for text, image in zip(parser.instructions, parser.instruction_images)
+        ]
+    else:
+        pairs = _step_pairs(result["recipeInstructions"])
+        html_pairs = _step_pairs(parser.instructions)
+        if [text for text, _ in pairs] == [text for text, _ in html_pairs] and len(pairs) == len(parser.instruction_images):
+            result["recipeInstructions"] = [
+                {"@type": "HowToStep", "text": text, "image": image or html_image}
+                for (text, image), html_image in zip(pairs, parser.instruction_images)
+            ]
+    return result
 
 
 def import_from_url(url: str) -> ImportedRecipe:
     data, ctype, final_url = fetch(url.strip(), MAX_PAGE_BYTES)
     page = _decode(data, ctype)
+    return import_from_html(page, final_url)
+
+
+def import_from_html(page: str, source_url: str) -> ImportedRecipe:
+    """Parse an already downloaded page without making another network request."""
     node = find_recipe(page)
     if not node:
         raise ImportError_(
             "На странице не нашлось разметки рецепта. Такой сайт пока не поддерживается — рецепт можно внести вручную."
         )
+    node = _iamcook_fields(page, node, source_url)
 
     prep = parse_duration(node.get("prepTime"))
     cook = parse_duration(node.get("cookTime"))
@@ -488,6 +664,8 @@ def import_from_url(url: str) -> ImportedRecipe:
         if c.lower() not in tags:
             tags.append(c.lower())
 
+    step_pairs = _step_pairs(node.get("recipeInstructions"))[:100]
+
     return ImportedRecipe(
         title=clean_text(node.get("name")) or _meta(page, "og:title") or "Рецепт",
         description=clean_text(node.get("description"))[:2000],
@@ -497,7 +675,8 @@ def import_from_url(url: str) -> ImportedRecipe:
         category=category[0] if category else "",
         tags=[t[:64] for t in tags if len(t) <= 64][:12],
         ingredients=_ingredients(node),
-        steps=_steps(node.get("recipeInstructions"))[:100],
-        image_url=urljoin(final_url, image) if image else None,
-        source_url=final_url,
+        steps=[text for text, _ in step_pairs],
+        image_url=urljoin(source_url, image) if image else None,
+        source_url=source_url,
+        step_images=[urljoin(source_url, image.strip()) if image else None for _, image in step_pairs],
     )

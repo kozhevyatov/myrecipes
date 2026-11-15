@@ -13,6 +13,7 @@ import { AvatarCropper } from "@/components/AvatarCropper";
 import { useAuth } from "@/lib/auth";
 import { useSettings } from "@/lib/useSettings";
 import { cn } from "@/lib/utils";
+import { RecipeImportsCard } from "@/components/RecipeImportsCard";
 
 function SettingsCard() {
   const queryClient = useQueryClient();
@@ -632,6 +633,7 @@ export default function AdminPage() {
   return (
     <div className="grid gap-8">
       <h1 className="title-display text-4xl sm:text-5xl">Управление</h1>
+      <RecipeImportsCard />
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
         <div className="grid content-start gap-6">
           <SettingsCard />
