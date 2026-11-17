@@ -248,6 +248,21 @@ export function RecipeImportsCard() {
   });
   const start = useMutation({ mutationFn: api.imports.start, onSuccess: (job) => { rememberJob(job); refreshJobs(); toast.success("Задание запущено"); }, onError: (error) => { refreshJobs(); toast.error(error.message); } });
   const stop = useMutation({ mutationFn: api.imports.stop, onSuccess: (job) => { rememberJob(job); refreshJobs(); }, onError: (error) => toast.error(error.message) });
+  const clearBase = useMutation({
+    mutationFn: api.imports.clearBase,
+    onSuccess: (result) => {
+      queryClient.setQueryData<RecipeImportJob[]>(["import-jobs"], []);
+      refreshSources();
+      refreshJobs();
+      queryClient.invalidateQueries({ queryKey: ["import-categories"] });
+      toast.success(`База рецептов очищена: удалено ${result.recipes.toLocaleString("ru-RU")} рецептов`);
+    },
+    onError: (error) => toast.error(error.message),
+  });
+  function confirmClearBase() {
+    if (!confirm("Очистить «Базу рецептов» полностью?\n\nБудут удалены все рецепты и категории сайтов, история заданий и их отчёты. Подключённые сайты и их настройки останутся. Рецепты, которые пользователи уже добавили в свои коллекции, не пострадают.\n\nОтменить это действие нельзя.")) return;
+    clearBase.mutate();
+  }
   const resume = useMutation({ mutationFn: api.imports.resume, onSuccess: (job) => { rememberJob(job); refreshJobs(); toast.success("Создано новое задание; сохранённые рецепты будут пропущены"); }, onError: (error) => toast.error(error.message) });
 
   function addSource(event: FormEvent) {
@@ -306,7 +321,7 @@ export function RecipeImportsCard() {
         {jobs.isError && <div role="alert" className="flex flex-wrap items-center justify-between gap-3 rounded-xl bg-destructive/10 p-3 text-sm"><p>Не удалось загрузить историю заданий: {jobs.error.message}</p><Button type="button" size="sm" variant="outline" disabled={jobs.isFetching} onClick={() => jobs.refetch()}>Обновить список заданий</Button></div>}
         {activeJob && <p role="status" className="rounded-xl bg-primary/10 p-3 text-sm">Выполняется задание №{activeJob.id}. Дождитесь завершения или остановите его. <a className="font-medium underline underline-offset-4" href="#recipe-import-jobs">Перейти к заданию</a></p>}
         {sources.isLoading ? <p className="flex items-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-4 animate-spin" /> Загрузка источников…</p> : sources.isError ? <div role="alert" className="rounded-xl bg-destructive/10 p-4 text-sm text-destructive"><p>{sources.error.message}</p><Button type="button" variant="outline" size="sm" className="mt-3" onClick={() => sources.refetch()}>Повторить</Button></div> : (
-          <div className="grid gap-3 lg:grid-cols-3">{sources.data?.map((source) => <SourceRow key={source.id} source={source} busy={(check.isPending && check.variables === source.id) || (update.isPending && update.variables.id === source.id) || (remove.isPending && remove.variables === source.id)} onCheck={() => check.mutate(source.id)} canIndex={!start.isPending} onUpdate={(data) => update.mutate({ id: source.id, data })} onIndex={() => start.mutate({ source_id: source.id, mode: "index", limit: 0, is_public: false })} onDelete={() => remove.mutate(source.id)} />)}</div>
+          <div className="grid gap-3 sm:grid-cols-2">{sources.data?.map((source) => <SourceRow key={source.id} source={source} busy={(check.isPending && check.variables === source.id) || (update.isPending && update.variables.id === source.id) || (remove.isPending && remove.variables === source.id)} onCheck={() => check.mutate(source.id)} canIndex={!start.isPending} onUpdate={(data) => update.mutate({ id: source.id, data })} onIndex={() => start.mutate({ source_id: source.id, mode: "index", limit: 0, is_public: false })} onDelete={() => remove.mutate(source.id)} />)}</div>
         )}
         <form onSubmit={startJob} className="grid gap-4 border-t pt-6">
           <div><h3 className="font-semibold">Добавить рецепты в базу</h3><p className="mt-1 text-sm text-muted-foreground">Рецепты попадают только в «Базу рецептов», без повторов, и не смешиваются с рецептами пользователей.</p></div>
@@ -323,6 +338,11 @@ export function RecipeImportsCard() {
         <div id="recipe-import-jobs" className="grid scroll-mt-24 gap-3 border-t pt-6">
           <div className="flex items-center justify-between gap-3"><h3 className="font-semibold">Последние задания</h3><Button type="button" size="sm" variant="ghost" disabled={jobs.isFetching} onClick={() => jobs.refetch()}><RefreshCw className={jobs.isFetching ? "animate-spin" : ""} /> Обновить</Button></div>
           {jobs.isLoading ? <p className="text-sm text-muted-foreground">Загрузка заданий…</p> : jobs.isError && !jobs.data?.length ? <p role="alert" className="text-sm text-destructive">{jobs.error.message}</p> : jobs.data?.length === 0 ? <p className="text-sm text-muted-foreground">Заданий пока нет. Результаты первого запуска появятся здесь.</p> : jobs.data?.map((job) => <JobRow key={job.id} job={job} canStart={!activeJob && !resume.isPending && Boolean(sources.data?.some((source) => source.id === job.source_id && source.enabled && source.verified))} stopping={stop.isPending && stop.variables === job.id} resuming={resume.isPending && resume.variables === job.id} onStop={() => stop.mutate(job.id)} onResume={() => resume.mutate(job.id)} />)}
+        </div>
+        <div className="grid gap-3 rounded-2xl border border-destructive/40 p-4">
+          <div><h3 className="font-semibold text-destructive">Очистить базу рецептов</h3><p className="mt-1 text-sm text-muted-foreground">Удаляет все рецепты и категории сайтов, историю заданий и отчёты. Подключённые сайты остаются, рецепты в коллекциях пользователей не затрагиваются.</p></div>
+          <div><Button type="button" variant="destructive" disabled={clearBase.isPending || Boolean(activeJob)} onClick={confirmClearBase}>{clearBase.isPending ? <Loader2 className="animate-spin" /> : <Trash2 />} Очистить БАЗУ РЕЦЕПТОВ</Button></div>
+          {activeJob && <p className="text-xs text-muted-foreground">Сначала дождитесь окончания или остановите текущее задание.</p>}
         </div>
       </CardContent>
     </Card>

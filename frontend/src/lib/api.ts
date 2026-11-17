@@ -799,6 +799,7 @@ export const api = {
       request<RecipeImportJob>("/api/admin/imports/jobs", { method: "POST", body: json(data) }),
     stop: (id: number) => request<RecipeImportJob>(`/api/admin/imports/jobs/${id}/stop`, { method: "POST" }),
     resume: (id: number) => request<RecipeImportJob>(`/api/admin/imports/jobs/${id}/resume`, { method: "POST" }),
+    clearBase: () => request<{ recipes: number; categories: number }>("/api/admin/imports/clear-base", { method: "POST" }),
   },
 
   siteRecipes: {

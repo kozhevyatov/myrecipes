@@ -27,6 +27,7 @@ from ..images import (
     resolve_photo,
     save_image,
     save_image_bytes,
+    IMPORTED_MAX_SIDE,
     thumb_url,
 )
 from ..models import (
@@ -786,7 +787,7 @@ def import_recipe(data: ImportIn, db: Session = Depends(get_db), _: User = Depen
     if r.image_url:
         try:
             raw, _ctype, _ = importer.fetch(r.image_url, importer.MAX_IMAGE_BYTES, accept="image/*")
-            image_token = save_image_bytes(raw, prefix=IMPORT_PREFIX)
+            image_token = save_image_bytes(raw, prefix=IMPORT_PREFIX, max_side=IMPORTED_MAX_SIDE)
         except (importer.ImportError_, HTTPException):
             image_token = None  # без фото — не страшно
 

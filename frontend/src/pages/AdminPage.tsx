@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Camera, Check, Download, KeyRound, Loader2, Pencil, Plus, Shield, Trash2, Upload, UserPlus, X } from "lucide-react";
+import { Camera, Check, Download, Globe, KeyRound, Loader2, Pencil, Plus, Settings, Shield, Tags, Trash2, Upload, UserPlus, Users, X, type LucideIcon } from "lucide-react";
+import { useSearchParams } from "react-router";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -629,18 +630,65 @@ function UsersCard() {
   );
 }
 
+type AdminSection = "sources" | "service" | "users" | "categories";
+
+const sections: { id: AdminSection; label: string; hint: string; icon: LucideIcon }[] = [
+  { id: "sources", label: "Источники", hint: "Сайты и база рецептов", icon: Globe },
+  { id: "service", label: "Сервис", hint: "Название и резервная копия", icon: Settings },
+  { id: "users", label: "Пользователи", hint: "Учётные записи и роли", icon: Users },
+  { id: "categories", label: "Категории", hint: "Справочник категорий", icon: Tags },
+];
+
+function isSection(value: string | null): value is AdminSection {
+  return sections.some((section) => section.id === value);
+}
+
 export default function AdminPage() {
+  const [params, setParams] = useSearchParams();
+  const requested = params.get("section");
+  const active: AdminSection = isSection(requested) ? requested : "sources";
+
+  function choose(section: AdminSection) {
+    const next = new URLSearchParams(params);
+    next.set("section", section);
+    setParams(next, { replace: true });
+  }
+
   return (
     <div className="grid gap-8">
       <h1 className="title-display text-4xl sm:text-5xl">Управление</h1>
-      <RecipeImportsCard />
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
-        <div className="grid content-start gap-6">
-          <SettingsCard />
-          <CategoriesCard />
-          <BackupCard />
-        </div>
-        <UsersCard />
+      <div className="grid items-start gap-6 lg:grid-cols-[15rem_minmax(0,1fr)]">
+        <nav aria-label="Разделы управления" className="lg:sticky lg:top-24">
+          <Card className="p-2">
+            <ul className="flex gap-1 overflow-x-auto lg:flex-col">
+              {sections.map(({ id, label, hint, icon: Icon }) => (
+                <li key={id} className="shrink-0">
+                  <button
+                    type="button"
+                    aria-current={active === id ? "page" : undefined}
+                    onClick={() => choose(id)}
+                    className={cn(
+                      "flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left text-sm transition-colors",
+                      active === id ? "bg-primary/10 font-semibold text-primary" : "text-muted-foreground hover:bg-muted hover:text-foreground",
+                    )}
+                  >
+                    <Icon className="size-4 shrink-0" />
+                    <span className="grid">
+                      <span>{label}</span>
+                      <span className="hidden text-xs font-normal text-muted-foreground lg:block">{hint}</span>
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        </nav>
+        <section className="grid min-w-0 content-start gap-6">
+          {active === "sources" && <RecipeImportsCard />}
+          {active === "service" && <><SettingsCard /><BackupCard /></>}
+          {active === "users" && <UsersCard />}
+          {active === "categories" && <CategoriesCard />}
+        </section>
       </div>
     </div>
   );

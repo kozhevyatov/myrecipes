@@ -5,6 +5,8 @@ import io
 import re
 import time
 import uuid
+from contextlib import contextmanager
+from contextvars import ContextVar
 
 from fastapi import HTTPException, UploadFile
 from PIL import Image, ImageOps, UnidentifiedImageError
@@ -13,6 +15,8 @@ from .config import UPLOAD_DIR
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
 MAX_SIDE = 1600
+IMPORTED_MAX_SIDE = 1000  # фото, скачанные с чужих сайтов (импорт по ссылке и из «Базы рецептов»)
+_max_side: ContextVar[int] = ContextVar("max_image_side", default=MAX_SIDE)
 THUMB_SIDE = 640  # карточки в списке — ~40–70 КБ вместо 150–400 КБ
 Image.MAX_IMAGE_PIXELS = 60_000_000  # защита от «бомб» распаковки
 
@@ -54,6 +58,16 @@ def ensure_thumbs() -> None:
                 pass
 
 
+@contextmanager
+def imported_images():
+    """Внутри блока сохраняемые фото уменьшаются до IMPORTED_MAX_SIDE по большей стороне."""
+    token = _max_side.set(IMPORTED_MAX_SIDE)
+    try:
+        yield
+    finally:
+        _max_side.reset(token)
+
+
 async def save_image(file: UploadFile) -> str:
     data = await file.read(MAX_UPLOAD_BYTES + 1)
     if len(data) > MAX_UPLOAD_BYTES:
@@ -61,13 +75,14 @@ async def save_image(file: UploadFile) -> str:
     return save_image_bytes(data)
 
 
-def save_image_bytes(data: bytes, prefix: str = "") -> str:
+def save_image_bytes(data: bytes, prefix: str = "", max_side: int | None = None) -> str:
+    side = max_side or _max_side.get()
     try:
         img = Image.open(io.BytesIO(data))
         img = ImageOps.exif_transpose(img)
         if img.mode not in ("RGB", "RGBA"):
             img = img.convert("RGBA" if "A" in img.getbands() else "RGB")
-        img.thumbnail((MAX_SIDE, MAX_SIDE), Image.Resampling.LANCZOS)
+        img.thumbnail((side, side), Image.Resampling.LANCZOS)
     except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
         raise HTTPException(400, "Это не похоже на изображение")
 

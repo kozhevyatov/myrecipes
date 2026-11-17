@@ -11,16 +11,17 @@ from urllib.parse import urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from collect_recipes import CollectionError
 from recipe_sources import SourceConfigError, load_sources, normalize_recipe_url, public_source_url, sources_from_data
 
+from ..config import DATA_DIR
 from ..db import get_db
 from ..importer import ImportError_
-from ..models import ImportJob, ImportSource, SourceCategory, SourceRecipe, User, utcnow
+from ..models import ImportJob, ImportSource, SourceCategory, SourceRecipe, SourceRecipeImport, User, utcnow
 from ..security import get_current_user, require_admin
 
 router = APIRouter(prefix="/api", tags=["recipe imports"])
@@ -311,6 +312,30 @@ def delete_source(source_id: int, db: Session = Depends(get_db), _: User = Depen
         cancel_requested=True, status="stopping").execution_options(synchronize_session=False))
     db.commit()
     return {"deleted": True}
+
+
+@router.post("/admin/imports/clear-base")
+def clear_recipe_base(db: Session = Depends(get_db), _: User = Depends(require_admin)) -> dict:
+    """Полностью очищает «Базу рецептов»: рецепты и категории сайтов, историю заданий и их отчёты.
+
+    Подключённые сайты и их настройки остаются. Рецепты, которые пользователи уже добавили
+    себе в коллекции, тоже остаются — это их рецепты, связь с базой просто забывается.
+    """
+    if db.scalar(select(ImportJob.id).where(ImportJob.status.in_(ACTIVE_STATUSES)).limit(1)):
+        raise HTTPException(409, "Сейчас выполняется задание. Остановите его и повторите очистку")
+    recipes = db.scalar(select(func.count()).select_from(SourceRecipe)) or 0
+    categories = db.scalar(select(func.count()).select_from(SourceCategory)) or 0
+    db.execute(delete(SourceRecipeImport))
+    db.execute(delete(SourceRecipe))
+    db.execute(delete(SourceCategory))
+    db.execute(delete(ImportJob))
+    db.execute(update(ImportSource).values(last_indexed_at=None, index_complete=False, index_error=""))
+    db.commit()
+    reports = DATA_DIR / "import-reports"
+    if reports.is_dir():
+        for path in reports.glob("*.json"):
+            path.unlink(missing_ok=True)
+    return {"recipes": recipes, "categories": categories}
 
 
 @router.get("/admin/imports/jobs")

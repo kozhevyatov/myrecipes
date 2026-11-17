@@ -27,6 +27,7 @@ from tls_config import TLSConfigurationError, configure_tls
 
 from . import db, importer
 from .config import DATA_DIR
+from .images import imported_images
 from .models import Category, ImportJob, ImportSource, Recipe, SourceCategory, SourceRecipe, User, utcnow
 from .schemas import RecipeIn
 
@@ -165,7 +166,8 @@ class DatabaseImportAPI:
                 user = self._authorize(session)
                 if self._recipe(session, recipe_id).image:
                     return
-                asyncio.run(upload_image(recipe_id, UploadFile(io.BytesIO(image), filename="cover.img"), session, user))
+                with imported_images():
+                    asyncio.run(upload_image(recipe_id, UploadFile(io.BytesIO(image), filename="cover.img"), session, user))
         except HTTPException as exc:
             raise APIError(str(exc.detail), fatal=exc.status_code >= 500) from None
         except SQLAlchemyError:
@@ -179,7 +181,8 @@ class DatabaseImportAPI:
             with session_scope() as session:
                 user = self._authorize(session)
                 self._recipe(session, recipe_id)
-                asyncio.run(upload_step_image(recipe_id, step_id, UploadFile(io.BytesIO(image), filename="step.img"), True, session, user))
+                with imported_images():
+                    asyncio.run(upload_step_image(recipe_id, step_id, UploadFile(io.BytesIO(image), filename="step.img"), True, session, user))
         except HTTPException as exc:
             raise APIError(str(exc.detail), fatal=exc.status_code >= 500 or exc.status_code in (401, 403, 404)) from None
         except SQLAlchemyError:
