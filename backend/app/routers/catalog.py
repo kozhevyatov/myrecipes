@@ -1,8 +1,8 @@
 """Справочники: категории, теги, продукты."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, select
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import case, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -35,6 +35,7 @@ from ..schemas import (
     TagOut,
 )
 from ..security import get_current_user, require_admin
+from .recipes import SelectedTags, _filters, _like, _selected_tags, _source_filters
 
 router = APIRouter(prefix="/api", tags=["catalog"])
 
@@ -114,6 +115,47 @@ def list_tags(db: Session = Depends(get_db), _: User = Depends(get_current_user)
         .order_by(func.count(recipe_tags.c.recipe_id).desc(), Tag.name)
     ).all()
     return [TagOut(name=n, recipe_count=c) for n, c in rows if c > 0]
+
+
+@router.get("/tags/suggestions", response_model=list[TagOut])
+def suggest_tags(
+    q: str = Query(default="", max_length=100),
+    category_id: int | None = None,
+    tag: str | None = Query(default=None, max_length=64),
+    tags: SelectedTags = None,
+    mine: bool = False,
+    favorites: bool = False,
+    source_id: int | None = Query(default=None, ge=1),
+    limit: int = Query(default=8, ge=1, le=8),
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> list[TagOut]:
+    selected = _selected_tags(tag, tags)
+    conditions = _filters(user, None, category_id, None, mine, favorites, selected)
+    conditions.extend(_source_filters(db, source_id))
+    query = q.strip().lower()
+    if len(query) < 2:
+        return []
+    name = func.lower(func.trim(Tag.name))
+    count = func.count(func.distinct(Recipe.id))
+    # Count recipes, not tag rows: historical spelling variants can share a recipe.
+    conditions.extend([name.like(_like(query), escape="\\"), name.not_in(selected)])
+    rows = db.execute(
+        select(name.label("name"), count.label("recipe_count"))
+        .select_from(Tag)
+        .join(recipe_tags, recipe_tags.c.tag_id == Tag.id)
+        .join(Recipe, Recipe.id == recipe_tags.c.recipe_id)
+        .where(*conditions)
+        .group_by(name)
+        .order_by(
+            case((name == query, 1), else_=0).desc(),
+            case((name.like(_like(query)[1:], escape="\\"), 1), else_=0).desc(),
+            count.desc(),
+            name,
+        )
+        .limit(limit)
+    ).all()
+    return [TagOut(name=tag_name, recipe_count=recipe_count) for tag_name, recipe_count in rows]
 
 
 @router.get("/products", response_model=list[str])

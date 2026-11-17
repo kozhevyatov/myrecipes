@@ -258,6 +258,35 @@ mysql+pymysql://user:password@host:3306/recipes?charset=utf8mb4
 - Если используете MySQL/MariaDB, бэкапьте и её: при варианте 3 это папка `./mysql` или `mysqldump`.
 - Administrators can export a ZIP with recipes and photos from **Управление → Резервная копия** and import it on another server. Users and settings are not included in the archive.
 
+### Recipe search
+
+Collection search (`GET /api/recipes?q=...`) matches recipe titles and tags only.
+Descriptions, ingredients and preparation steps do not contribute matches.
+Each of the first six query words must match a title or tag, regardless of case;
+SQL wildcard characters are treated literally. Exact titles appear first, then
+recipes with more query words in their title. Ties use the latest update and
+recipe ID, so pagination has a stable order. Searching without a query retains
+the usual latest-update order. Use **Что есть дома** for ingredient-based selection.
+
+The collection search field stays below the header while scrolling. Typing at
+least two characters shows up to eight matching tags, including cuisines, with
+recipe counts. Selecting a suggestion adds the tag and clears the typed query;
+free-text search remains available within the selected tags. Tags can be selected
+together and removed individually: recipes must have **all** selected tags.
+Suggestions and counts respect the user's recipe visibility and the selected
+tags, category, source, personal-recipes and favorites filters. Counts describe
+the result after selecting that tag, without the text being typed. Suggestions
+are available while online.
+
+`GET /api/recipes` accepts repeated `tags` query parameters for this intersection;
+the existing single `tag` parameter remains supported and combines with them.
+`GET /api/tags/suggestions` returns the existing `{name, recipe_count}` tag shape
+and accepts `q`, repeated `tags`, legacy `tag`, `category_id`, `source_id`, `mine`,
+`favorites` and `limit` (1–8, default 8). Queries shorter than two trimmed characters
+return no suggestions. Tag names are matched literally without case sensitivity;
+case and surrounding-space variants are grouped, counting each recipe once.
+Both endpoints accept up to 20 selected tags of at most 64 characters each.
+
 ### Recipe sources and imports in the admin interface
 
 Administrators can manage collection under **Управление → Источники рецептов**.

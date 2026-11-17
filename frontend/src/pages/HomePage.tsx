@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
 import { Link, useSearchParams } from "react-router";
-import { keepPreviousData, useInfiniteQuery, useQuery } from "@tanstack/react-query";
-import { ChefHat, Dices, Home, Loader2, Plus, Search, X } from "lucide-react";
+import { useInfiniteQuery, useQuery } from "@tanstack/react-query";
+import { ChefHat, Dices, Home, Loader2, Plus } from "lucide-react";
 import { RandomRecipeSheet } from "@/components/RandomRecipeSheet";
 import { RecipeCard } from "@/components/RecipeCard";
 import { SiteRecipeCatalog } from "@/components/SiteRecipeCatalog";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
-import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { RecipeFilters } from "@/components/RecipeFilters";
+import { RecipeSearch } from "@/components/RecipeSearch";
 import { api } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { plural } from "@/lib/format";
@@ -32,25 +32,29 @@ function LocalRecipesPage() {
   const [params, setParams] = useSearchParams();
   const q = params.get("q") ?? "";
   const categoryId = params.get("category") ? Number(params.get("category")) : undefined;
-  const tag = params.get("tag") ?? undefined;
+  const selectedTags = [...new Set(params.getAll("tag").map((name) => name.trim().toLowerCase()).filter(Boolean))];
   const mine = params.get("mine") === "1";
   const favorites = params.get("fav") === "1";
   const sourceId = params.get("source") ? Number(params.get("source")) : undefined;
 
-  // Поле поиска обновляет URL с небольшой задержкой
+  // Update the URL after typing settles.
   const [search, setSearch] = useState(q);
-  // Синхронизация из URL (назад/вперёд, сброс фильтров) — не трогаем пробел, который пользователь сейчас набирает
+  // Preserve trailing spaces while typing, but follow navigation and filter resets.
   useEffect(() => {
     setSearch((s) => (s.trim() === q ? s : q));
   }, [q]);
   useEffect(() => {
+    if (search.trim() === q) return;
     const t = setTimeout(() => {
-      if (search.trim() === q) return;
-      setParam("q", search.trim() || null);
+      setParams((current) => {
+        const next = new URLSearchParams(current);
+        if (search.trim()) next.set("q", search.trim());
+        else next.delete("q");
+        return next;
+      }, { replace: true });
     }, 300);
     return () => clearTimeout(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [search]);
+  }, [search, q, setParams]);
 
   function setParam(key: string, value: string | null) {
     const next = new URLSearchParams(params);
@@ -59,25 +63,60 @@ function LocalRecipesPage() {
     setParams(next, { replace: true });
   }
 
+  function clearParams(keys: string[]) {
+    const next = new URLSearchParams(params);
+    for (const key of keys) next.delete(key);
+    setParams(next, { replace: true });
+  }
+
+  function resetFilters() {
+    setSearch("");
+    clearParams(["q", "category", "tag", "source", "mine", "fav"]);
+  }
+
+  function addTag(name: string) {
+    const normalized = name.trim().toLowerCase();
+    if (!normalized || selectedTags.includes(normalized) || selectedTags.length >= 20) return;
+    setSearch("");
+    setParams((current) => {
+      const next = new URLSearchParams(current);
+      const names = [...new Set([...current.getAll("tag").map((value) => value.trim().toLowerCase()), normalized])];
+      next.delete("q");
+      next.delete("tag");
+      for (const value of names.filter(Boolean)) next.append("tag", value);
+      return next;
+    }, { replace: true });
+  }
+
+  function removeTag(name: string) {
+    setParams((current) => {
+      const next = new URLSearchParams(current);
+      next.delete("tag");
+      for (const value of current.getAll("tag")) {
+        if (value.trim().toLowerCase() !== name) next.append("tag", value);
+      }
+      return next;
+    }, { replace: true });
+  }
+
   const categories = useQuery({ queryKey: ["categories"], queryFn: api.catalog.categories });
   const tags = useQuery({ queryKey: ["tags"], queryFn: api.catalog.tags });
   const sources = useQuery({ queryKey: ["recipe-sources"], queryFn: api.imports.catalogSources });
 
   const recipes = useInfiniteQuery({
-    queryKey: ["recipes", { q, categoryId, tag, mine, favorites, sourceId }],
+    queryKey: ["recipes", { q, categoryId, tags: selectedTags, mine, favorites, sourceId }],
     queryFn: ({ pageParam }) =>
-      api.recipes.list({ q: q || undefined, category_id: categoryId, tag, mine, favorites, source_id: sourceId, limit: PAGE, offset: pageParam }),
+      api.recipes.list({ q: q || undefined, category_id: categoryId, tags: selectedTags, mine, favorites, source_id: sourceId, limit: PAGE, offset: pageParam }),
     initialPageParam: 0,
     getNextPageParam: (last, pages) => {
       const loaded = pages.reduce((n, p) => n + p.items.length, 0);
       return loaded < last.total ? loaded : undefined;
     },
-    placeholderData: keepPreviousData,
   });
 
   const items = recipes.data?.pages.flatMap((p) => p.items) ?? [];
   const total = recipes.data?.pages[0]?.total ?? 0;
-  const filtered = Boolean(q || categoryId || tag || mine || favorites || sourceId);
+  const filtered = Boolean(q || categoryId || selectedTags.length || mine || favorites || sourceId);
   const name = user?.display_name || user?.username;
   const online = useOnline();
   const [randomOpen, setRandomOpen] = useState(false);
@@ -116,77 +155,30 @@ function LocalRecipesPage() {
       </div>
       {randomOpen && <RandomRecipeSheet onClose={() => setRandomOpen(false)} />}
 
-      <div className="relative">
-        <Search className="absolute top-1/2 left-4 size-4 -translate-y-1/2 text-muted-foreground" />
-        <Input
-          className="h-13 rounded-full border-transparent bg-card pr-11 pl-11 shadow-[0_1px_2px_rgb(0_0_0/0.04),0_0_0_1px_var(--border)] focus-visible:shadow-none"
-          placeholder="Название, тег или ингредиент — например, «курица рис»"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          type="search"
-          enterKeyHint="search"
-        />
-        {search && (
-          <button
-            className="absolute top-1/2 right-3 -translate-y-1/2 rounded-md p-1 text-muted-foreground hover:text-foreground"
-            onClick={() => setSearch("")}
-            aria-label="Очистить"
-          >
-            <X className="size-4" />
-          </button>
-        )}
-      </div>
+      <RecipeSearch
+        value={search}
+        onChange={setSearch}
+        onSelectTag={addTag}
+        filters={{ category_id: categoryId, tags: selectedTags, source_id: sourceId, mine, favorites }}
+        online={online}
+      />
 
-      {/* Фильтры: горизонтальная прокрутка на телефоне */}
-      <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 [scrollbar-width:none] sm:mx-0 sm:flex-wrap sm:px-0">
-        <Chip active={!categoryId && !mine && !favorites && !sourceId} onClick={() => setParams(new URLSearchParams(q ? { q } : {}), { replace: true })}>
-          Все
-        </Chip>
-        <Chip active={favorites} onClick={() => setParam("fav", favorites ? null : "1")}>
-          Избранное
-        </Chip>
-        <Chip active={mine} onClick={() => setParam("mine", mine ? null : "1")}>
-          Мои
-        </Chip>
-        {categories.data?.map((c) => (
-          <Chip
-            key={c.id}
-            active={categoryId === c.id}
-            onClick={() => setParam("category", categoryId === c.id ? null : String(c.id))}
-          >
-            {c.name}
-            {c.recipe_count > 0 && <span className="opacity-60">{c.recipe_count}</span>}
-          </Chip>
-        ))}
-      </div>
-
-      {sources.data && sources.data.length > 0 && (
-        <div className="grid max-w-sm gap-2">
-          <label htmlFor="recipe-source-filter" className="text-sm font-medium">Источник рецептов</label>
-          <Select id="recipe-source-filter" value={sourceId ?? ""} onChange={(event) => setParam("source", event.target.value || null)}>
-            <option value="">Все источники и свои рецепты</option>
-            {sources.data.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}
-          </Select>
-        </div>
-      )}
-
-      {tags.data && tags.data.length > 0 && (
-        <div className="-mt-2 flex flex-wrap gap-1.5">
-          {tags.data.slice(0, 20).map((t) => (
-            <button
-              key={t.name}
-              onClick={() => setParam("tag", tag === t.name ? null : t.name)}
-              className={
-                tag === t.name
-                  ? "rounded-full bg-highlight px-3 py-1 text-xs font-medium text-highlight-foreground"
-                  : "rounded-full bg-accent px-3 py-1 text-xs font-medium text-accent-foreground hover:bg-accent/70"
-              }
-            >
-              {t.name}
-            </button>
-          ))}
-        </div>
-      )}
+      <RecipeFilters
+        categoryId={categoryId}
+        selectedTags={selectedTags}
+        onAddTag={addTag}
+        onRemoveTag={removeTag}
+        sourceId={sourceId}
+        mine={mine}
+        favorites={favorites}
+        searchActive={Boolean(q)}
+        categories={{ items: categories.data ?? [], loading: categories.isLoading, error: categories.error?.message, retry: () => { categories.refetch(); } }}
+        tags={{ items: tags.data ?? [], loading: tags.isLoading, error: tags.error?.message, retry: () => { tags.refetch(); } }}
+        sources={{ items: sources.data ?? [], loading: sources.isLoading, error: sources.error?.message, retry: () => { sources.refetch(); } }}
+        onChange={setParam}
+        onAll={() => clearParams(["category", "tag", "source", "mine", "fav"])}
+        onReset={resetFilters}
+      />
 
       {recipes.isLoading ? (
         <div className="flex justify-center py-20">
@@ -201,7 +193,7 @@ function LocalRecipesPage() {
             <>
               <h2 className="mt-5 text-xl font-bold">Ничего не нашлось</h2>
               <p className="mt-2 max-w-sm text-sm text-muted-foreground">Попробуйте другой запрос или сбросьте фильтры.</p>
-              <Button variant="outline" className="mt-6" onClick={() => setParams(new URLSearchParams(), { replace: true })}>
+              <Button variant="outline" className="mt-6" onClick={resetFilters}>
                 Сбросить фильтры
               </Button>
             </>

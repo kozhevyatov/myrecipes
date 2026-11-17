@@ -3,6 +3,7 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from "react-router";
 import { useQuery } from "@tanstack/react-query";
 import { BookOpen, CalendarDays, Carrot, CloudOff, LogOut, Settings, ShoppingBasket } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { BackToTop } from "@/components/BackToTop";
 import { Avatar } from "@/components/Avatar";
 import { Brand } from "@/components/Logo";
 import { ThemeMenu } from "@/components/ThemeMenu";
@@ -114,6 +115,8 @@ export function Layout() {
       <main className="mx-auto max-w-6xl px-4 py-8 pb-28 sm:px-6 sm:py-10 lg:pb-12 print:p-0">
         <Outlet />
       </main>
+
+      <BackToTop />
 
       {/* Нижняя навигация на телефоне */}
       <nav className="fixed inset-x-0 bottom-0 z-30 flex gap-1 print:hidden border-t bg-background/90 px-2 pt-1.5 pb-[max(0.375rem,env(safe-area-inset-bottom))] backdrop-blur-xl lg:hidden">

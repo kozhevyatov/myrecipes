@@ -4,10 +4,12 @@ import random
 import json
 import secrets
 from datetime import timedelta
+from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from fastapi.concurrency import run_in_threadpool
-from sqlalchemy import exists, func, or_, select, true, update
+from pydantic import Field
+from sqlalchemy import case, exists, func, or_, select, true, update
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session, noload
 
@@ -79,6 +81,7 @@ from ..security import get_current_user
 router = APIRouter(prefix="/api/recipes", tags=["recipes"])
 
 MAX_SCREENSHOTS = 10
+SelectedTags = Annotated[list[Annotated[str, Field(min_length=1, max_length=64)]] | None, Query(max_length=20)]
 
 
 # ---------- доступ ----------
@@ -285,6 +288,39 @@ def _like(value: str) -> str:
     return f"%{escaped}%"
 
 
+def _search_order(q: str | None) -> list:
+    if not q or not q.strip():
+        return []
+    title = func.lower(Recipe.title)
+    # Exact titles come first, followed by the number of query words in the title.
+    title_matches = sum(
+        case((title.like(_like(word), escape="\\"), 1), else_=0)
+        for word in q.split()[:6]
+    )
+    return [
+        case((title == " ".join(q.lower().split()), 1), else_=0).desc(),
+        title_matches.desc(),
+    ]
+
+
+def _selected_tags(tag: str | None = None, tags: list[str] | None = None) -> list[str]:
+    selected = list(dict.fromkeys(value.strip().lower() for value in [*(tags or []), tag or ""] if value.strip()))
+    if len(selected) > 20:
+        raise HTTPException(422, "Можно выбрать не более 20 тегов")
+    return selected
+
+
+def _source_filters(db: Session, source_id: int | None) -> list:
+    if source_id is None:
+        return []
+    source = db.get(ImportSource, source_id)
+    if source is None or not source.enabled or not source.verified:
+        raise HTTPException(404, "Источник рецептов не подключён")
+    definition = json.loads(source.definition_json)
+    return [or_(*(Recipe.source_url.like(f"{scheme}://{host}/%")
+                  for host in definition["hosts"] for scheme in ("http", "https")))]
+
+
 @router.get("", response_model=RecipeListOut)
 def list_recipes(
     q: str | None = Query(default=None, max_length=100),
@@ -295,24 +331,19 @@ def list_recipes(
     limit: int = Query(default=24, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     source_id: int | None = Query(default=None, ge=1),
+    tags: SelectedTags = None,
     db: Session = Depends(get_db),
     user: User = Depends(get_current_user),
 ) -> RecipeListOut:
-    conds = _filters(user, q, category_id, tag, mine, favorites)
-    if source_id is not None:
-        source = db.get(ImportSource, source_id)
-        if source is None or not source.enabled or not source.verified:
-            raise HTTPException(404, "Источник рецептов не подключён")
-        definition = json.loads(source.definition_json)
-        conds.append(or_(*(Recipe.source_url.like(f"{scheme}://{host}/%")
-                           for host in definition["hosts"] for scheme in ("http", "https"))))
+    conds = _filters(user, q, category_id, tag, mine, favorites, tags)
+    conds.extend(_source_filters(db, source_id))
     total = db.scalar(select(func.count()).select_from(Recipe).where(*conds)) or 0
     rows = db.scalars(
         select(Recipe)
         .where(*conds)
         # Для карточек нужны только название, фото, теги — ингредиенты и шаги не грузим
         .options(noload(Recipe.ingredients), noload(Recipe.steps), noload(Recipe.photos))
-        .order_by(Recipe.updated_at.desc(), Recipe.id.desc())
+        .order_by(*_search_order(q), Recipe.updated_at.desc(), Recipe.id.desc())
         .limit(limit)
         .offset(offset)
     ).unique().all()
@@ -337,6 +368,7 @@ def _filters(
     tag: str | None = None,
     mine: bool = False,
     favorites: bool = False,
+    tags: list[str] | None = None,
 ) -> list:
     conds = [_visible(user)]
     if mine:
@@ -345,28 +377,21 @@ def _filters(
         conds.append(exists().where(Favorite.recipe_id == Recipe.id, Favorite.user_id == user.id))
     if category_id is not None:
         conds.append(Recipe.category_id == category_id)
-    if tag:
-        conds.append(Recipe.tags.any(Tag.name == tag.strip().lower()))
+    for selected_tag in _selected_tags(tag, tags):
+        conds.append(Recipe.tags.any(func.lower(func.trim(Tag.name)) == selected_tag))
     if q and q.strip():
-        # Каждое слово должно найтись в названии, описании, тегах или ингредиентах:
-        # «курица рис» → рецепты, где есть и то, и другое.
+        # Each word must match the recipe title or a tag. Ingredients and prose
+        # can mention other dishes and must not broaden ordinary recipe search.
         for word in q.split()[:6]:
             pattern = _like(word)
-            by_product = exists().where(
-                RecipeIngredient.recipe_id == Recipe.id,
-                RecipeIngredient.product_id == Product.id,
-                func.lower(Product.name).like(pattern, escape="\\"),
-            )
             by_tag = exists().where(
                 recipe_tags.c.recipe_id == Recipe.id,
                 recipe_tags.c.tag_id == Tag.id,
-                Tag.name.like(pattern, escape="\\"),
+                func.lower(Tag.name).like(pattern, escape="\\"),
             )
             conds.append(
                 or_(
                     func.lower(Recipe.title).like(pattern, escape="\\"),
-                    func.lower(Recipe.description).like(pattern, escape="\\"),
-                    by_product,
                     by_tag,
                 )
             )

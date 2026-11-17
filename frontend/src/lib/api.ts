@@ -270,6 +270,7 @@ export type RecipeQuery = {
   q?: string;
   category_id?: number;
   tag?: string;
+  tags?: string[];
   mine?: boolean;
   favorites?: boolean;
   limit?: number;
@@ -392,7 +393,9 @@ export type RecipeImportJob = {
 function qs(params: Record<string, unknown>): string {
   const q = new URLSearchParams();
   Object.entries(params).forEach(([k, v]) => {
-    if (v !== undefined && v !== null && v !== "" && v !== false) q.set(k, String(v));
+    if (Array.isArray(v)) {
+      for (const value of v) q.append(k, String(value));
+    } else if (v !== undefined && v !== null && v !== "" && v !== false) q.set(k, String(v));
   });
   const s = q.toString();
   return s ? `?${s}` : "";
@@ -608,14 +611,8 @@ export const api = {
   },
 
   recipes: {
-    list: (params: RecipeQuery = {}) => {
-      const qs = new URLSearchParams();
-      Object.entries(params).forEach(([k, v]) => {
-        if (v !== undefined && v !== null && v !== "" && v !== false) qs.set(k, String(v));
-      });
-      const query = qs.toString();
-      return request<{ items: RecipeListItem[]; total: number }>(`/api/recipes${query ? `?${query}` : ""}`);
-    },
+    list: (params: RecipeQuery = {}) =>
+      request<{ items: RecipeListItem[]; total: number }>(`/api/recipes${qs(params)}`),
     get: (id: number) => request<Recipe>(`/api/recipes/${id}`),
     costHistory: (id: number) => request<CostHistory>(`/api/recipes/${id}/cost-history`),
     create: (data: RecipeInput) => request<Recipe>("/api/recipes", { method: "POST", body: json(data) }),
@@ -691,6 +688,8 @@ export const api = {
       request<Category>(`/api/categories/${id}`, { method: "PATCH", body: json(data) }),
     deleteCategory: (id: number) => request<{ ok: true }>(`/api/categories/${id}`, { method: "DELETE" }),
     tags: () => request<TagInfo[]>("/api/tags"),
+    tagSuggestions: (params: Omit<RecipeQuery, "tag" | "offset">, signal?: AbortSignal) =>
+      request<TagInfo[]>(`/api/tags/suggestions${qs(params)}`, { signal }),
     products: () => request<string[]>("/api/products"),
     productCatalog: () => request<Product[]>("/api/products/catalog"),
     updateProduct: (id: number, data: ProductPatch) =>
