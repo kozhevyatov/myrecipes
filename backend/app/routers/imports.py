@@ -339,8 +339,6 @@ def create_job(data: JobCreate, db: Session = Depends(get_db), admin: User = Dep
     if (data.urls and (data.catalog_url or data.category_id)) or (data.category_id and data.catalog_url):
         raise HTTPException(422, "Выберите ссылки на рецепты или ссылку на раздел, а не оба варианта сразу")
     source = _get_source(db, data.source_id)
-    if data.mode == "index" and (data.urls or data.catalog_url or data.category_id):
-        raise HTTPException(422, "Обновление каталога выполняется для всего источника")
     catalog_url = data.catalog_url
     if data.category_id is not None:
         category = db.get(SourceCategory, data.category_id)

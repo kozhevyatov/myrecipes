@@ -24,7 +24,7 @@ export default function HomePage() {
     if (external) next.set("view", "sites"); else next.delete("view");
     setParams(next, { replace: true });
   }
-  return <div className="grid gap-6"><div className="flex flex-wrap gap-2" aria-label="Каталог рецептов"><Chip active={!siteCatalog} aria-pressed={!siteCatalog} onClick={() => chooseCatalog(false)}>Коллекция</Chip><Chip active={siteCatalog} aria-pressed={siteCatalog} onClick={() => chooseCatalog(true)}>Рецепты сайтов</Chip></div>{siteCatalog ? <SiteRecipeCatalog /> : <LocalRecipesPage />}</div>;
+  return <div className="grid gap-6"><div className="flex flex-wrap gap-2" aria-label="Каталог рецептов"><Chip active={!siteCatalog} aria-pressed={!siteCatalog} onClick={() => chooseCatalog(false)}>Коллекция</Chip><Chip active={siteCatalog} aria-pressed={siteCatalog} onClick={() => chooseCatalog(true)}>База рецептов</Chip></div>{siteCatalog ? <SiteRecipeCatalog /> : <LocalRecipesPage />}</div>;
 }
 
 function LocalRecipesPage() {

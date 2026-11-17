@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Check, Download, ExternalLink, Globe, ImagePlus, Loader2, Pencil, Play, Plus, RefreshCw, Square, Trash2, X } from "lucide-react";
+import { Check, Download, ExternalLink, Globe, Loader2, Pencil, Play, Plus, RefreshCw, Square, Trash2, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
-import { api, type RecipeImportJob, type RecipeImportMode, type RecipeImportSource, type RecipeImportStatus, type RecipeSourceDefinition, type RecipeSourceUpdate } from "@/lib/api";
+import { api, type RecipeImportJob, type RecipeImportSource, type RecipeImportStatus, type RecipeSourceDefinition, type RecipeSourceUpdate } from "@/lib/api";
 import { cn } from "@/lib/utils";
 
 const activeStatuses: RecipeImportStatus[] = ["queued", "running", "stopping"];
@@ -91,13 +91,13 @@ function SourceRow({ source, busy, canIndex, onCheck, onUpdate, onIndex, onDelet
       {source.last_error && <p role="alert" className="break-words text-sm text-destructive">{source.last_error}</p>}
       <div className="grid grid-cols-2 gap-3 rounded-xl bg-muted/60 p-3 text-sm">
         <div><p className="text-xs text-muted-foreground">Найдено в каталоге</p><p className="mt-1 font-semibold">{source.total_recipes == null ? source.indexed_recipes > 0 ? `Не менее ${source.indexed_recipes.toLocaleString("ru-RU")}` : "Ещё не загружен" : source.total_recipes.toLocaleString("ru-RU")}</p></div>
-        <div><p className="text-xs text-muted-foreground">Импортировано</p><p className="mt-1 font-semibold">{(source.imported_recipes ?? 0).toLocaleString("ru-RU")}</p></div>
+        <div><p className="text-xs text-muted-foreground">В коллекциях пользователей</p><p className="mt-1 font-semibold">{(source.imported_recipes ?? 0).toLocaleString("ru-RU")}</p></div>
         <p className="col-span-2 text-xs text-muted-foreground">В каталоге: {source.indexed_recipes ?? 0} · Категорий: {source.categories_count ?? 0}<br />{source.last_indexed_at ? `${source.index_complete ? "Обход завершён" : "Каталог заполнен частично"} · ${formatDate(source.last_indexed_at)}` : (source.total_recipes ?? 0) > 0 ? "Каталог пополнен при импорте; полный обход ещё не выполнялся." : "Обновите каталог, чтобы узнать состав сайта."}</p>
       </div>
       {source.index_error && <p role="alert" className="break-words text-xs text-destructive">{source.index_error}</p>}
       <div className="grid gap-3 border-t pt-3">
-        <label className="flex items-center justify-between gap-3 text-sm"><span>Делать видимыми на сайте</span><Switch aria-label={`Показывать рецепты ${source.name} на сайте`} checked={source.visible_in_catalog ?? false} disabled={busy || !source.verified} onCheckedChange={(visible_in_catalog) => onUpdate({ visible_in_catalog })} /></label>
-        <p className="-mt-1 text-xs text-muted-foreground">Рецепты появятся в разделе «Рецепты сайтов» без добавления в личные коллекции.</p>
+        <label className="flex items-center justify-between gap-3 text-sm"><span>Показывать в «Базе рецептов»</span><Switch aria-label={`Показывать рецепты ${source.name} в базе рецептов`} checked={source.visible_in_catalog ?? false} disabled={busy || !source.verified} onCheckedChange={(visible_in_catalog) => onUpdate({ visible_in_catalog })} /></label>
+        <p className="-mt-1 text-xs text-muted-foreground">Рецепты появятся на вкладке «База рецептов» на главной. В коллекцию пользователя рецепт попадает, только когда он сам его добавит.</p>
         <label className="flex items-center justify-between gap-3 text-sm"><span>Обновлять каталог автоматически</span><Switch aria-label={`Автоматически обновлять ${source.name}`} checked={source.auto_refresh ?? false} disabled={busy || !source.verified} onCheckedChange={(auto_refresh) => onUpdate({ auto_refresh })} /></label>
         {source.auto_refresh && <div className="grid gap-2"><label htmlFor={`source-refresh-${source.id}`} className="text-xs text-muted-foreground">Период обновления, часов</label><div className="flex gap-2"><Input id={`source-refresh-${source.id}`} type="number" min={1} max={720} value={hours} disabled={busy} onChange={(event) => setHours(event.target.value)} /><Button type="button" size="sm" variant="outline" disabled={busy || hours === String(source.refresh_interval_hours)} onClick={saveInterval}>Сохранить</Button></div>{source.next_refresh_at && <p className="text-xs text-muted-foreground">Следующее обновление: {formatDate(source.next_refresh_at)}</p>}</div>}
       </div>
@@ -105,7 +105,7 @@ function SourceRow({ source, busy, canIndex, onCheck, onUpdate, onIndex, onDelet
       <div className="flex flex-wrap gap-2">
         <Button type="button" size="sm" variant="outline" disabled={busy} onClick={onCheck}><RefreshCw /> Проверить</Button>
         <Button type="button" size="sm" variant="outline" disabled={Boolean(indexDisabledReason)} title={indexDisabledReason ?? undefined} aria-describedby={indexDisabledReason ? `source-index-reason-${source.id}` : undefined} onClick={onIndex}><Globe /> Обновить каталог</Button>
-        <Button type="button" size="sm" variant="ghost" className="text-destructive hover:text-destructive" disabled={busy} onClick={() => { if (confirm(`Удалить источник «${source.name}»?\n\nОн исчезнет из подключённых сайтов и каталога рецептов сайтов. Уже импортированные рецепты и их фотографии останутся в коллекциях пользователей.`)) onDelete(); }}><Trash2 /> Удалить</Button>
+        <Button type="button" size="sm" variant="ghost" className="text-destructive hover:text-destructive" disabled={busy} onClick={() => { if (confirm(`Удалить источник «${source.name}»?\n\nОн исчезнет из подключённых сайтов и из «Базы рецептов». Уже добавленные пользователями рецепты и их фотографии останутся в коллекциях пользователей.`)) onDelete(); }}><Trash2 /> Удалить</Button>
       </div>
       {indexDisabledReason && <p id={`source-index-reason-${source.id}`} role="status" className="text-xs text-muted-foreground">{indexDisabledReason}</p>}
       {source.checked_at && <p className="text-xs text-muted-foreground">Проверка: {formatDate(source.checked_at)}</p>}
@@ -127,9 +127,9 @@ function JobRow({ job, canStart, stopping, resuming, onStop, onResume }: {
   const warnings = report.warnings ?? [];
   const attempted = report.attempted ?? 0;
   const processed = report.processed ?? attempted + (report.duplicates ?? 0);
-  const jobName = job.mode === "index" ? "Обновление каталога" : job.mode === "images" ? "Дополнение фото" : "Импорт рецептов";
+  const jobName = job.mode === "index" ? (job.parameters.urls?.length || job.parameters.category_id || job.parameters.catalog_url ? "Добавление в базу" : "Обновление базы") : job.mode === "images" ? "Дополнение фото" : "Импорт рецептов (старый режим)";
   const stopReasons: Record<string, string> = { exhausted: "Все доступные ссылки обработаны", limit: "Достигнут лимит рецептов", attempt_limit: "Достигнут предел попыток", catalog_limit: "Обход каталога завершён частично", catalog_page_limit: "Достигнут предел страниц; каталог заполнен частично", discovery_partial: "Каталог обработан частично; подробности в отчёте", catalog_error: "Не удалось прочитать часть каталога", stopped: "Остановлено", failed: "Обработка завершилась с ошибкой", fatal: "Обработка остановлена из-за ошибки" };
-  const detail = job.mode === "index" ? `Найдено: ${report.discovered ?? 0} · Прочитано новых: ${report.indexed ?? 0} · Уже в каталоге: ${report.cached ?? 0} · Страниц каталога: ${report.catalog_pages ?? 0}` : job.mode === "images"
+  const detail = job.mode === "index" ? `Найдено: ${report.discovered ?? 0} · Добавлено в базу: ${report.indexed ?? 0} · Уже в базе: ${report.cached ?? 0} · Страниц каталога: ${report.catalog_pages ?? 0}` : job.mode === "images"
     ? `Обложек: ${report.updated_images ?? 0} · Фото шагов: ${report.updated_step_images ?? 0}`
     : `Добавлено: ${report.created ?? 0} · Повторов: ${report.duplicates ?? 0} · Фото шагов: ${report.step_images ?? 0}`;
   return (
@@ -149,7 +149,7 @@ function JobRow({ job, canStart, stopping, resuming, onStop, onResume }: {
         <p className="mt-1 text-muted-foreground">Обработано: {processed} · Лимит: {job.parameters.limit === 0 ? "без лимита" : job.parameters.limit}{report.skipped ? ` · Пропущено: ${report.skipped}` : ""}</p>
       </div>
       {report.stop_reason && <p className="text-xs text-muted-foreground">{stopReasons[report.stop_reason] ?? report.stop_reason}</p>}
-      {active && job.parameters.limit > 0 && job.mode !== "index" && (
+      {active && job.parameters.limit > 0 && (
         <div className="h-1.5 overflow-hidden rounded-full bg-muted" aria-hidden="true">
           <div className="h-full rounded-full bg-primary transition-[width]" style={{ width: `${Math.min(100, Math.max(0, (job.mode === "import" ? (report.created ?? 0) : attempted) / job.parameters.limit * 100))}%` }} />
         </div>
@@ -195,13 +195,10 @@ export function RecipeImportsCard() {
   const [definition, setDefinition] = useState("");
   const [formError, setFormError] = useState("");
   const [sourceId, setSourceId] = useState("");
-  const [mode, setMode] = useState<RecipeImportMode>("import");
   const [scope, setScope] = useState<"site" | "category" | "urls">("site");
   const [categoryId, setCategoryId] = useState("");
   const [manualUrls, setManualUrls] = useState("");
   const [limit, setLimit] = useState("50");
-  const [isPublic, setIsPublic] = useState(true);
-  const [stepPhotos, setStepPhotos] = useState(true);
 
   const activeJob = jobs.data?.find((job) => activeStatuses.includes(job.status));
   const ready = sources.data?.filter((source) => source.enabled && source.verified) ?? [];
@@ -276,16 +273,16 @@ export function RecipeImportsCard() {
     const urls = scope === "urls" ? manualUrls.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith("#")) : [];
     if (scope === "urls" && (urls.length === 0 || urls.length > 100)) { toast.error("Укажите от 1 до 100 ссылок, по одной на строку."); return; }
     const requestedLimit = Number(limit);
-    if (!Number.isInteger(requestedLimit) || requestedLimit < 0 || requestedLimit > 1000) { toast.error("Укажите 0 для импорта без лимита или число от 1 до 1000."); return; }
+    if (!Number.isInteger(requestedLimit) || requestedLimit < 0 || requestedLimit > 1000) { toast.error("Укажите 0 без лимита или число от 1 до 1000."); return; }
     if (scope === "category" && !categoryId) { toast.error("Выберите категорию сайта."); return; }
-    start.mutate({ source_id: chosen.id, mode, limit: requestedLimit, is_public: isPublic, urls, category_id: scope === "category" ? Number(categoryId) : undefined, no_step_images: !stepPhotos });
+    start.mutate({ source_id: chosen.id, mode: "index", limit: requestedLimit, is_public: false, urls, category_id: scope === "category" ? Number(categoryId) : undefined, no_step_images: true });
   }
 
   return (
     <Card>
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div><CardTitle className="flex items-center gap-2"><Globe className="size-5" /> Источники рецептов</CardTitle><CardDescription className="mt-2">Проверка сайтов, импорт рецептов и дополнение фотографий. Задания выполняются на сервере.</CardDescription></div>
+          <div><CardTitle className="flex items-center gap-2"><Globe className="size-5" /> Источники рецептов</CardTitle><CardDescription className="mt-2">Проверка сайтов и наполнение «Базы рецептов». Задания выполняются на сервере.</CardDescription></div>
           <Button type="button" variant="outline" size="sm" disabled={add.isPending} onClick={() => setShowAdd(!showAdd)}><Plus /> Подключить сайт</Button>
         </div>
       </CardHeader>
@@ -312,21 +309,16 @@ export function RecipeImportsCard() {
           <div className="grid gap-3 lg:grid-cols-3">{sources.data?.map((source) => <SourceRow key={source.id} source={source} busy={(check.isPending && check.variables === source.id) || (update.isPending && update.variables.id === source.id) || (remove.isPending && remove.variables === source.id)} onCheck={() => check.mutate(source.id)} canIndex={!start.isPending} onUpdate={(data) => update.mutate({ id: source.id, data })} onIndex={() => start.mutate({ source_id: source.id, mode: "index", limit: 0, is_public: false })} onDelete={() => remove.mutate(source.id)} />)}</div>
         )}
         <form onSubmit={startJob} className="grid gap-4 border-t pt-6">
-          <div><h3 className="font-semibold">Запустить задание</h3><p className="mt-1 text-sm text-muted-foreground">Новые рецепты добавляются без повторов. Дополнение фото сохраняет тексты и существующие изображения.</p></div>
-          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <div><h3 className="font-semibold">Добавить рецепты в базу</h3><p className="mt-1 text-sm text-muted-foreground">Рецепты попадают только в «Базу рецептов», без повторов, и не смешиваются с рецептами пользователей.</p></div>
+          <div className="grid gap-4 sm:grid-cols-3">
             <Field id="import-job-source" label="Источник"><Select id="import-job-source" value={sourceId} onChange={(event) => setSourceId(event.target.value)} required><option value="">Выберите проверенный сайт</option>{ready.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}</Select></Field>
-            <Field id="import-job-mode" label="Действие"><Select id="import-job-mode" value={mode} onChange={(event) => { setMode(event.target.value as RecipeImportMode); if (event.target.value === "index") setScope("site"); }}><option value="import">Добавить рецепты</option><option value="images">Дополнить фотографии</option><option value="index">Обновить каталог сайта</option></Select></Field>
-            <Field id="import-job-scope" label="Что обработать"><Select id="import-job-scope" value={scope} onChange={(event) => setScope(event.target.value as typeof scope)}><option value="site">Весь источник</option>{mode !== "index" && <><option value="category">Категорию или раздел</option><option value="urls">Отдельные рецепты</option></>}</Select></Field>
+            <Field id="import-job-scope" label="Что обработать"><Select id="import-job-scope" value={scope} onChange={(event) => setScope(event.target.value as typeof scope)}><option value="site">Весь источник</option><option value="category">Категорию или раздел</option><option value="urls">Отдельные рецепты</option></Select></Field>
             <Field id="import-job-limit" label="Лимит рецептов" hint="0 — без лимита"><Input id="import-job-limit" type="number" min={0} max={1000} required value={limit} onChange={(event) => setLimit(event.target.value)} /></Field>
           </div>
           {scope === "category" && <div className="grid gap-2"><Field id="import-job-category" label="Категория сайта" hint="Категории сохраняются при обновлении каталога."><Select id="import-job-category" required value={categoryId} disabled={categories.isLoading || categories.isError} onChange={(event) => setCategoryId(event.target.value)}><option value="">{categories.isLoading ? "Загрузка категорий…" : "Выберите категорию"}</option>{categories.data?.map((category) => <option key={category.id} value={category.id}>{category.title}{category.recipes_count ? ` (${category.recipes_count})` : ""}</option>)}</Select></Field>{categories.isError && <p role="alert" className="text-sm text-destructive">{categories.error.message}</p>}{!categories.isLoading && !categories.isError && !categories.data?.length && <div className="flex flex-wrap items-center gap-3"><p className="text-sm text-muted-foreground">Категории ещё не загружены. Сначала обновите каталог сайта.</p><Button type="button" size="sm" variant="outline" disabled={!chosen || start.isPending} onClick={() => chosen && start.mutate({ source_id: chosen.id, mode: "index", limit: 0, is_public: false })}>Обновить каталог</Button></div>}</div>}
           {scope === "urls" && <Field id="import-job-urls" label="Ссылки на рецепты" hint="До 100 ссылок выбранного источника, по одной на строку."><Textarea id="import-job-urls" required value={manualUrls} onChange={(event) => setManualUrls(event.target.value)} placeholder="https://…" /></Field>}
-          <div className="flex flex-wrap gap-x-6 gap-y-3">
-            {mode === "import" && <label className="flex cursor-pointer items-center gap-3 text-sm"><Switch checked={isPublic} onCheckedChange={setIsPublic} /> Видны всем пользователям</label>}
-            {mode !== "index" && <label className="flex cursor-pointer items-center gap-3 text-sm"><Switch checked={stepPhotos} onCheckedChange={setStepPhotos} /> Фото шагов приготовления</label>}
-          </div>
           {!ready.length && !sources.isLoading && <p className="text-sm text-muted-foreground">Сначала проверьте и включите хотя бы один источник.</p>}
-          <div><Button type="submit" disabled={!chosen || start.isPending || (mode !== "index" && (Boolean(activeJob) || jobs.isLoading || jobs.isError))}>{start.isPending ? <Loader2 className="animate-spin" /> : mode === "images" ? <ImagePlus /> : <Play />} {mode === "index" ? "Обновить каталог" : mode === "images" ? "Дополнить фото" : "Начать импорт"}</Button></div>
+          <div><Button type="submit" disabled={!chosen || start.isPending || Boolean(activeJob) || jobs.isLoading || jobs.isError}>{start.isPending ? <Loader2 className="animate-spin" /> : <Play />} Добавить в базу</Button></div>
         </form>
         <div id="recipe-import-jobs" className="grid scroll-mt-24 gap-3 border-t pt-6">
           <div className="flex items-center justify-between gap-3"><h3 className="font-semibold">Последние задания</h3><Button type="button" size="sm" variant="ghost" disabled={jobs.isFetching} onClick={() => jobs.refetch()}><RefreshCw className={jobs.isFetching ? "animate-spin" : ""} /> Обновить</Button></div>

@@ -351,10 +351,15 @@ requesting or storing another account password.
    stop collection. **Остановить** requests a cooperative stop between network
    operations and writes; completed recipe/image updates remain saved.
 
-Enable **Делать видимыми на сайте** to expose a source's indexed recipes in
-**Рецепты сайтов**. Authenticated users can filter that catalog, open a recipe
+The admin form **Добавить рецепты в базу** only fills this recipe base
+(`source_recipes`): the whole source, one category or selected recipe links.
+It never creates recipes in users' collections, so site recipes do not mix
+with recipes written by users.
+
+Enable **Показывать в «Базе рецептов»** to expose a source's indexed recipes on
+the **База рецептов** tab of the home page. Authenticated users can filter that catalog, open a recipe
 and read its ingredients and steps without creating a personal recipe. Source
-images remain external until import. **Импортировать рецепт** explicitly saves
+images remain external until import. **Добавить в мою коллекцию** explicitly saves
 the recipe and available photos into the current user's collection, privately
 by default. Repeating that action opens the already imported recipe. Disabled,
 unverified or hidden sources are not accessible through the external catalog.

@@ -307,16 +307,23 @@ def ensure_metadata(session, external: SourceRecipe) -> None:
     session.commit()
 
 
-def index_source(source_id: int, definition: dict, client: Client, check_cancel, progress, limit: int = 0) -> dict:
-    """Scan metadata only; original recipes and media stay external until explicit import."""
+def index_source(source_id: int, definition: dict, client: Client, check_cancel, progress, limit: int = 0,
+                 urls: list[str] | None = None, category_scope: bool = False) -> dict:
+    """Fill the recipe base with metadata only; recipes stay out of user collections until explicit import.
+
+    Without ``urls`` and ``category_scope`` the whole source is scanned and the source status is updated.
+    A partial run (selected recipe links or one category) only adds or refreshes entries in the base.
+    """
     from .import_jobs import session_scope
 
     settings = sources_from_data({"source": definition})
+    full_scan = not urls and not category_scope
     scan_started = utcnow()
-    with session_scope() as session:
-        source = session.get(ImportSource, source_id)
-        source.index_complete, source.index_error = False, ""
-        session.commit()
+    if full_scan:
+        with session_scope() as session:
+            source = session.get(ImportSource, source_id)
+            source.index_complete, source.index_error = False, ""
+            session.commit()
     report = {"created": 0, "indexed": 0, "discovered": 0, "cached": 0, "catalog_pages": 0,
               "attempted": 0, "errors": [], "error_count": 0, "complete": False, "stop_reason": "running"}
 
@@ -343,8 +350,13 @@ def index_source(source_id: int, definition: dict, client: Client, check_cancel,
         progress(report)
 
     try:
-        for url in discover("source", client, settings, max_catalog_pages=None, on_category=category_found,
-                            on_recipe=recipe_found, progress_callback=discovery_progress):
+        if urls:
+            report["discovered"] = len(urls)
+            candidates = iter(urls)
+        else:
+            candidates = discover("source", client, settings, max_catalog_pages=None, category_scope=category_scope,
+                                  on_category=category_found, on_recipe=recipe_found, progress_callback=discovery_progress)
+        for url in candidates:
             check_cancel()
             report["attempted"] += 1
             with session_scope() as session:
@@ -372,12 +384,16 @@ def index_source(source_id: int, definition: dict, client: Client, check_cancel,
             if limit and report["attempted"] >= limit:
                 report["complete"], report["stop_reason"] = False, "limit"
                 break
+        else:
+            if urls:
+                report["complete"], report["stop_reason"] = True, "exhausted"
     except KeyboardInterrupt:
         report["complete"], report["stop_reason"] = False, "stopped"
-        with session_scope() as session:
-            source = session.get(ImportSource, source_id)
-            source.index_complete, source.index_error = False, "Обновление каталога остановлено"
-            session.commit()
+        if full_scan:
+            with session_scope() as session:
+                source = session.get(ImportSource, source_id)
+                source.index_complete, source.index_error = False, "Обновление каталога остановлено"
+                session.commit()
         progress({**report, "interrupted": True})
         raise
     except (CollectionError, importer.ImportError_, ValueError) as exc:
@@ -387,6 +403,9 @@ def index_source(source_id: int, definition: dict, client: Client, check_cancel,
             report["errors"].append({"stage": "discovery", "error": str(exc)})
     if report["error_count"]:
         report["complete"] = False
+    if not full_scan:
+        progress(report)
+        return report
     with session_scope() as session:
         source = session.get(ImportSource, source_id)
         if report["complete"]:

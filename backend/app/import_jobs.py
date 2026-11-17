@@ -328,7 +328,8 @@ def run_job(job_id: int, owner_id: str, stop_event: threading.Event) -> None:
         if mode == "index":
             from .source_catalog import index_source
 
-            report = index_source(source_id, definition, client, check_cancel, progress, parameters["limit"])
+            report = index_source(source_id, definition, client, check_cancel, progress, parameters["limit"],
+                                  urls=urls, category_scope=bool(parameters.get("catalog_url")))
             status = "failed" if report.get("errors") and not (report.get("indexed") or report.get("cached")) else "completed"
             return
         if mode == "images" and parameters.get("catalog_url"):
