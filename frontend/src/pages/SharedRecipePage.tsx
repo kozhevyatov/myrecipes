@@ -56,7 +56,7 @@ export default function SharedRecipePage() {
 
   const header = (
     <header className="border-b print:hidden">
-      <div className="mx-auto flex h-16 max-w-5xl items-center justify-between gap-4 px-4 sm:px-6">
+      <div className="mx-auto flex h-16 max-w-6xl items-center justify-between gap-4 px-4 sm:px-6">
         <Brand name={recipe?.site_name ?? "Мои рецепты"} />
         {user ? (
           <Button asChild variant="outline" size="sm">
@@ -100,7 +100,7 @@ export default function SharedRecipePage() {
   return (
     <div className="min-h-svh">
       {header}
-      <article className="mx-auto grid max-w-5xl gap-8 px-4 py-8 sm:px-6 sm:py-10">
+      <article className="mx-auto grid max-w-6xl gap-8 px-4 py-8 sm:px-6 sm:py-10">
         <header className="grid gap-8 md:grid-cols-[1.15fr_1fr] md:items-center print:grid-cols-[14rem_1fr] print:gap-6">
           <div className="grid gap-2">
             <button

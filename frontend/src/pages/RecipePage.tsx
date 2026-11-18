@@ -195,7 +195,7 @@ export default function RecipePage() {
   };
 
   return (
-    <article className="mx-auto grid max-w-5xl gap-8">
+    <article className="grid gap-8">
       <div className="flex items-center justify-between gap-2 print:hidden">
         <Button variant="ghost" size="sm" onClick={back}>
           <ArrowLeft /> Назад

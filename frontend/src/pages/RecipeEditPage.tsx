@@ -472,7 +472,7 @@ export default function RecipeEditPage() {
 
   return (
     <form
-      className="mx-auto grid max-w-3xl gap-6 pb-24"
+      className="grid gap-6 pb-24"
       onSubmit={(e) => {
         e.preventDefault();
         save();
@@ -1080,7 +1080,7 @@ export default function RecipeEditPage() {
 
       {/* Панель сохранения */}
       <div className="fixed inset-x-0 bottom-0 z-40 border-t bg-background/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-md">
-        <div className="mx-auto flex max-w-3xl items-center justify-end gap-3 px-4 py-3">
+        <div className="mx-auto flex max-w-6xl items-center justify-end gap-3 px-4 py-3 sm:px-6">
           <Button type="button" variant="ghost" onClick={leave}>
             Отмена
           </Button>

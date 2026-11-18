@@ -330,7 +330,7 @@ export default function ShoppingPage() {
   };
 
   return (
-    <div className="mx-auto grid max-w-2xl gap-6">
+    <div className="grid gap-6">
       <h1 className="title-display text-4xl sm:text-5xl">Покупки</h1>
 
       {/* Вкладки списков */}
